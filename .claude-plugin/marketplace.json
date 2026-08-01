@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-correo",
+  "description": "Free business email on any domain: Cloudflare Email Routing receives, Resend sends signed with DKIM, your existing Gmail is the inbox.",
+  "owner": {
+    "name": "Douglasdawson",
+    "url": "https://github.com/Douglasdawson"
+  },
+  "plugins": [
+    {
+      "name": "correo",
+      "description": "Set up email on a domain for 0/month: receive at info@, send from your app with SPF/DKIM/DMARC, reply as info@ from Gmail. Includes the DNS migration checks that stop you taking the website down.",
+      "source": "./",
+      "category": "devops"
+    }
+  ]
+}

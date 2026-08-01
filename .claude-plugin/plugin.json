@@ -1,0 +1,21 @@
+{
+  "name": "correo",
+  "version": "1.0.0",
+  "description": "Free business email on any domain. Cloudflare Email Routing receives, Resend sends DKIM-signed, your existing Gmail is the inbox — no mailbox to pay for. Ships a hardened script (correo.sh) whose every quirk is a bug already suffered: DNSSEC guards, orange-proxy detection, 'this domain already has someone else's email' refusal, and the unverified-destination trap that makes a setup look green while delivering nothing.",
+  "author": {
+    "name": "Douglasdawson",
+    "url": "https://github.com/Douglasdawson"
+  },
+  "homepage": "https://github.com/Douglasdawson/claude-correo",
+  "license": "MIT",
+  "keywords": [
+    "email",
+    "dns",
+    "cloudflare",
+    "resend",
+    "spf",
+    "dkim",
+    "dmarc",
+    "email-routing"
+  ]
+}
