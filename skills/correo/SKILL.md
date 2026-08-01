@@ -90,6 +90,11 @@ Se guarda en `~/.config/cloudflare-api.token`.
   `~/.config` ni a redesplegar nada.
 - **`Account Settings → Read` no hace falta**: `GET /accounts` viene vacío sin él, así que el
   script saca el account id de una zona cualquiera. Un permiso menos que pedir.
+- ⚠️ **Arreglar un token es manual, no lo intentes por ti mismo.** Por API no se puede
+  (`PUT /user/tokens/{id}` exige *API Tokens → Write*, que un token de DNS no tiene ni debe tener:
+  da `Unauthorized to access requested resource`). Y `dash.cloudflare.com` **nunca llega a
+  `document_idle`** bajo automatización de navegador: `find` y `screenshot` dan timeout una y otra
+  vez (1-ago-2026, tres intentos). Pasa el checklist al humano y sigue con lo demás.
 
 ## Fase 2 — DNS a Cloudflare
 
