@@ -121,10 +121,20 @@ print(r[0]["id"] if r else "")')
 # contesta de nada, y daba TODO como que difiere — frenando migraciones sanas
 # de cualquier ccTLD (6-ago-2026).
 ns_reales() {
-  local d="$1" tld="${1##*.}" srv ans
-  srv=$(dig +noall +authority NS "$tld." @a.root-servers.net 2>/dev/null | awk '$4=="NS"{print $5}' | head -1)
+  local d="$1" tld="${1##*.}" srv ans i
+  # Los dos dig llevan reintento por la misma razon que dig_: una respuesta
+  # perdida es indistinguible de "no hay delegacion", y aqui el vacio se propaga
+  # hasta ns_auth, que cae al resolver publico y devuelve los falsos negativos
+  # que este arreglo venia a matar. Sin reintento, el arreglo se anula solo.
+  for i in 1 2 3 4; do
+    srv=$(dig +noall +authority +time=3 +tries=1 NS "$tld." @a.root-servers.net 2>/dev/null | awk '$4=="NS"{print $5}' | head -1)
+    [ -n "$srv" ] && break
+  done
   [ -n "$srv" ] || srv=a.gtld-servers.net
-  ans=$(dig +noall +authority NS "$d" @"$srv" 2>/dev/null | awk '$4=="NS"{print $5}' | sed 's/\.$//' | sort)
+  for i in 1 2 3 4; do
+    ans=$(dig +noall +authority +time=3 +tries=1 NS "$d" @"$srv" 2>/dev/null | awk '$4=="NS"{print $5}' | sed 's/\.$//' | sort)
+    [ -n "$ans" ] && break
+  done
   # si lo que vuelve son los root, es que ese servidor no manda en este TLD
   case "$ans" in *root-servers.net*) return 0 ;; esac
   printf '%s\n' "$ans" | grep -v '^$'
