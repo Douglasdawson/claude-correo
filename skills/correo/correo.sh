@@ -894,18 +894,19 @@ cmd_estado() {
   local dkim; dkim=$(dig_ TXT "resend._domainkey.$d" "$(ns_auth "$d")")
   [ -n "$dkim" ] && ok "saliente: Resend (DKIM presente)" || mal "saliente: sin DKIM de Resend"
 
-  # La combinacion que se traga las solicitudes de clientes: el dominio REENVIA
-  # (MX de Cloudflare) y ademas ENVIA desde si mismo (DKIM). Si la app manda sus
-  # avisos internos a una direccion de este mismo dominio, van de info@ a info@ y
-  # el anti-bucle de Cloudflare los descarta sin dejar rastro. Se detecta desde el
-  # DNS, asi que se avisa aunque nadie lo pregunte.
+  # El dominio REENVIA (MX de Cloudflare) y ademas ENVIA desde si mismo (DKIM).
+  # Es la configuracion donde una app suele auto-avisarse a una direccion de su
+  # propio dominio — y ahi el reenvio ha perdido mensajes de forma NO
+  # determinista (6-ago-2026: solicitudes de clientes perdidas media hora, y el
+  # mismo patron entregando unas veces si y otras no al intentar reproducirlo).
+  # No se conoce el mecanismo; lo que se sabe es que no hay que apoyar en el
+  # reenvio nada que solo llegue una vez.
   if echo "$mx" | grep -q 'mx\.cloudflare\.net' && [ -n "$dkim" ]; then
     echo
-    mal "OJO: este dominio reenvia Y envia desde si mismo"
-    info "el correo cuyo remitente es @$d y va dirigido a @$d lo DESCARTA Cloudflare"
-    info "(anti-bucle, en silencio). Si la app se auto-avisa a una direccion de"
-    info "este dominio, pierde esos mensajes sin ningun error."
-    info "→ el buzon de los avisos internos va FUERA de $d"
+    info "este dominio REENVIA y ademas ENVIA desde si mismo"
+    info "si la app se auto-avisa a una direccion de @$d, esos avisos van por el"
+    info "reenvio — que pierde mensajes sin dejar rastro y sin patron fijo."
+    info "→ el buzon de reservas/formularios, DIRECTO y fuera de $d"
   fi
 
   local spf dmarc

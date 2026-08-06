@@ -216,18 +216,24 @@ Activa Email Routing, crea MX + SPF + DKIM, da de alta el destino y pone el **ca
   Cloudflare, queda verificado al instante); **con el buzón de un cliente es EL paso bloqueante**,
   y es suyo, no tuyo: hay que pedírselo y esperar. `entrante` lo canta al terminar, `estado` lo
   lleva en su línea `destino:` y `destinos` es la comprobación explícita.
-- 🔴 **Email Routing DESCARTA en silencio el correo cuyo remitente pertenece al dominio que
-  enruta.** Es su anti-bucle, y no deja ni rastro: el proveedor de envío lo acepta, tu app
-  registra "enviado", el buzón no recibe nada — ni en spam. Muerde en el caso más común de
-  todos: **la app que envía desde `info@tudominio.com` y manda sus avisos internos a
-  `info@tudominio.com`**. Se pierden solicitudes de clientes sin que salte una sola alarma.
-  Comprobado el 6-ago-2026 con dos envíos idénticos al mismo buzón: desde otro dominio llega,
-  desde el propio no aparece.
-  → **El buzón que recibe los avisos internos tiene que estar FUERA del dominio enrutado**
-  (un Gmail, otro dominio). Lo que ve el cliente —remitente, `Reply-To`, web, legales— sí puede
-  ser `info@`: un cliente que responde es remitente externo y su correo se entrega bien.
-  → Y por eso **verificar mirando el log de la app no vale**: dice "sent" igual. La prueba es
-  abrir el buzón.
+- 🔴 **El reenvío pierde mensajes, y no de forma determinista. No apoyes nada crítico en él.**
+  Lo observado el 6-ago-2026, midiendo con envíos reales y mirando la bandeja (no el log):
+  - Una app enviaba desde `info@dominio` sus avisos internos **a `info@dominio`**. Ni uno solo
+    llegó en media hora — varios mensajes reales, ni en spam. Se perdieron solicitudes de
+    clientes. Al mover el buzón interno FUERA del dominio, empezaron a llegar todos.
+  - Pero al intentar reproducir la causa en otro dominio, **el mismo patrón exacto llegó unas
+    veces y otras no**: remitente y destinatario idénticos entregó; dos envíos con las mismas
+    dos direcciones, uno llegó y el otro no apareció jamás.
+
+  O sea: **hay pérdida real y no se sabe el mecanismo.** No es "mismo dominio" ni "misma
+  dirección" — eso se probó y es falso. La regla práctica que sí se sostiene:
+
+  → **Lo que no te puedes permitir perder no pasa por el reenvío.** El buzón que recibe avisos
+  internos (reservas, formularios, pedidos) se pone **directo**, fuera del dominio enrutado, y
+  con el menor número de saltos posible. El reenvío es perfecto para `info@` de cara al público:
+  si se pierde un mensaje, el cliente reescribe. No lo es para un lead que solo llega una vez.
+  → Y **verificar por el log de la app no vale**: dice "sent" igual. La prueba es abrir el buzón,
+  y con envíos repetidos — uno solo no distingue "funciona" de "esta vez tuvo suerte".
 - ⚠️ **`test` da 250 aunque el destino esté sin verificar**: el MX de Cloudflare acepta el sobre
   antes de mirar la ruta. `test` verde ≠ correo entregado. La prueba buena es `destinos`.
 - ⚠️ **Se niega si el dominio ya tiene MX de otro proveedor.** Montar Email Routing encima deja a
