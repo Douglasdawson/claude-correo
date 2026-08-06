@@ -369,9 +369,82 @@ print("  ✓ todos en DNS-only")'
   echo
   if [ "$difs" -eq 0 ] && [ "$proxy" -eq 0 ]; then
     ok "paridad correcta: ya se pueden cambiar los nameservers en el registrador"
-  else
-    mal "NO cambies los nameservers todavia"
+    return 0
   fi
+  mal "NO cambies los nameservers todavia"
+  return 1   # explicito: 'ns --a-cloudflare' lo usa de freno, y antes SIEMPRE daba 0
+}
+
+# ---------------------------------------------------------------------------
+# ns — leer y cambiar los nameservers en el REGISTRADOR. El unico paso de la
+# migracion que seguia siendo manual; con la API del registrador deja de serlo y
+# una cartera entera pasa a ser un bucle.
+#
+# Hoy solo GoDaddy (PAT en ~/.config/godaddy-pat.token). Anyadir otro registrador
+# es una funcion mas aqui: lo que NO se toca es el freno de 'paridad'.
+# ---------------------------------------------------------------------------
+gd_pat() { tr -d '\n\r' < "$HOME/.config/godaddy-pat.token" 2>/dev/null; }
+
+cmd_ns() {
+  local d="${1:-}" accion="${2:-}"
+  [ -n "$d" ] || { echo "uso: correo.sh ns <dominio> [--a-cloudflare]" >&2; return 1; }
+  local pat; pat=$(gd_pat)
+  [ -n "$pat" ] || { mal "falta ~/.config/godaddy-pat.token (developer.godaddy.com/personal-access-token)"; return 1; }
+
+  local ficha; ficha=$(curl -s -m 25 -H "Authorization: Bearer $pat" -H "Accept: application/json" \
+    "https://api.godaddy.com/v3/domains/domain-names/$d")
+  local actuales; actuales=$(printf '%s' "$ficha" | python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: sys.exit(1)
+print(" ".join(d.get("nameServers") or []))' 2>/dev/null)
+  if [ -z "$actuales" ]; then
+    mal "no puedo leer $d en GoDaddy (¿no esta en esa cuenta, o el PAT no tiene el scope de dominios?)"
+    printf '%s\n' "$ficha" | head -c 200; echo; return 1
+  fi
+
+  titulo "$d — nameservers en GoDaddy"
+  local n; for n in $actuales; do info "$n"; done
+  [ "$accion" = "--a-cloudflare" ] || { info "para cambiarlos:  correo.sh ns $d --a-cloudflare"; return 0; }
+
+  case "$actuales" in *cloudflare*) ok "ya estan en Cloudflare, no toco nada"; return 0 ;; esac
+
+  need_cf
+  local z; z=$(zid "$d") || { mal "la zona no existe en Cloudflare: 'correo.sh zona $d' primero"; return 1; }
+  local nuevos; nuevos=$(cf_get "/zones/$z" | python3 -c '
+import json,sys
+try: print(" ".join(json.load(sys.stdin)["result"].get("name_servers") or []))
+except Exception: print("")')
+  [ -n "$nuevos" ] || { mal "la zona no tiene nameservers asignados"; return 1; }
+
+  # EL FRENO. Cambiar los NS con la zona a medias tira la web y todo lo que
+  # cuelgue del dominio; por eso no se hace nunca sin paridad en verde.
+  echo; info "comprobando paridad antes de tocar la delegacion…"
+  cmd_paridad "$d" || { echo; mal "paridad NO limpia: no cambio los nameservers"; return 1; }
+
+  local body; body=$(printf '%s' "$nuevos" | python3 -c '
+import json,sys; print(json.dumps(sys.stdin.read().split()))')
+  echo; titulo "cambiando la delegacion de $d"
+  local r; r=$(curl -s -m 30 -X PUT \
+    -H "Authorization: Bearer $pat" -H "Content-Type: application/json" -H "Accept: application/json" \
+    -H "Idempotency-Key: $(uuidgen)" \
+    --data "$body" \
+    "https://api.godaddy.com/v3/domains/domain-names/$d/nameservers")
+  printf '%s' "$r" | python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: print("  respuesta ilegible"); sys.exit(1)
+if d.get("status") or d.get("operationId"):
+    print("  ✓ aceptado (%s)" % d.get("status","?"))
+else:
+    print("  ✗", d.get("message") or d)
+    for x in d.get("details") or []: print("     ", x.get("field"), x.get("issue"))
+    sys.exit(1)' || return 1
+
+  for n in $nuevos; do ok "$n"; done
+  echo
+  info "la delegacion tarda entre 1 y 30 min en llegar a los gTLD. La verdad:"
+  info "    dig +noall +authority NS $d @a.gtld-servers.net"
 }
 
 # ---------------------------------------------------------------------------
@@ -788,6 +861,7 @@ EOF
 # ---------------------------------------------------------------------------
 case "${1:-}" in
   flota)        shift; cmd_flota "$@" ;;
+  ns)           shift; cmd_ns "$@" ;;
   inventario)   shift; cmd_inventario "$@" ;;
   precheck)     shift; cmd_precheck "$@" ;;
   zona)         shift; cmd_zona "$@" ;;

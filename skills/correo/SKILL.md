@@ -29,6 +29,7 @@ bash $C precheck <dominio>                   # ANTES de tocar nada: DNSSEC, NS, 
 bash $C inventario <dominio>                 # todos los registros, con el tipo explícito
 bash $C zona <dominio>                       # crea la zona en Cloudflare (NO cambia los NS)
 bash $C paridad <dominio>                    # ¿sirve lo mismo que el registrador? antes de migrar
+bash $C ns <dominio> [--a-cloudflare]        # los NS en el registrador; los cambia si paridad va verde
 bash $C entrante <dominio> <destino>         # Email Routing + catch-all
 bash $C destinos <dominio>                   # quién recibe y si está VERIFICADO ← el fallo nº1
 bash $C saliente <dominio> <fichero-token>   # Resend: alta, DKIM, verificación
@@ -130,12 +131,33 @@ bash $C zona <dominio>        # crea la zona e importa; imprime los NS a poner
 bash $C paridad <dominio>     # ambos lados deben servir LO MISMO
 ```
 
-Con `paridad` en verde, cambiar los nameservers **a mano en el registrador** (es el paso de
-riesgo y no se automatiza) y verificar:
+Con `paridad` en verde, cambiar los nameservers en el registrador y verificar contra los gTLD:
 
 ```bash
+bash $C ns <dominio> --a-cloudflare    # si el registrador tiene API
 dig +noall +authority NS <dominio> @a.gtld-servers.net
 ```
+
+`ns` vuelve a correr `paridad` por su cuenta y **se niega si no está en verde**: es el único
+paso que puede tirar la web y todo lo que cuelgue del dominio, así que el freno va dentro del
+comando, no en la cabeza de quien lo escribe. Hoy habla con **GoDaddy** (PAT en
+`~/.config/godaddy-pat.token`, se saca en `developer.godaddy.com/personal-access-token`); otro
+registrador es una función más ahí.
+
+Gotchas de la API de GoDaddy, que costaron un rato:
+
+- Los **PAT solo valen para `v3`**. Contra `v1` dan `401` sin explicar nada, y es fácil leerlo
+  como "token mal copiado". La ruta buena es
+  `PUT /v3/domains/domain-names/{dominio}/nameservers`, con el body como **array plano**.
+- **Exige una cabecera `Idempotency-Key`** (un UUID). Sin ella responde `400
+  INVALID_PARAMETER` señalando un campo del *header*, no del body.
+- El portal de desarrolladores **tiene su propio login**, distinto del de la cuenta: si sale un
+  JSON con `authorizeUrl`, es que no hay sesión ahí; hay que abrir esa URL una vez.
+- La API de producción **pide una cartera mínima** (~10 dominios) o un plan de pago. Con menos,
+  credencial válida y `403` igual.
+
+Si el registrador no tiene API (o no la quieres), el cambio manual sigue siendo válido: es un
+campo de nameservers, y `paridad` te dice si ya se puede tocar.
 
 - ⚠️ **DNSSEC activo + cambio de NS = dominio sin resolver del todo.** `precheck` lo comprueba y
   `zona` se niega a actuar. Hay que desactivarlo en el registrador y esperar a que caduque el DS.
