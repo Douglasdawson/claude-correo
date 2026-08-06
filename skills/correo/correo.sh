@@ -484,21 +484,53 @@ import json,sys; print(json.dumps(sys.stdin.read().split()))')
     -H "Idempotency-Key: $(uuidgen)" \
     --data "$body" \
     "https://api.godaddy.com/v3/domains/domain-names/$d/nameservers")
-  printf '%s' "$r" | python3 -c '
+  local opid; opid=$(printf '%s' "$r" | python3 -c '
 import json,sys
 try: d=json.load(sys.stdin)
-except Exception: print("  respuesta ilegible"); sys.exit(1)
-if d.get("status") or d.get("operationId"):
-    print("  ✓ aceptado (%s)" % d.get("status","?"))
-else:
-    print("  ✗", d.get("message") or d)
-    for x in d.get("details") or []: print("     ", x.get("field"), x.get("issue"))
-    sys.exit(1)' || return 1
+except Exception: sys.exit(0)
+print(d.get("operationId") or "")')
+  if [ -z "$opid" ]; then
+    mal "rechazado de entrada"
+    printf '%s' "$r" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+print("     ", d.get("message") or d)
+for x in d.get("details") or []: print("     ", x.get("field"), x.get("issue"))' 2>/dev/null
+    return 1
+  fi
+
+  # ⚠ El PUT devuelve status:CONFIRMED, que significa "aceptada para procesar",
+  # NO "hecho". El veredicto real llega segundos despues en la operacion, y
+  # puede ser FAILED con un motivo ("Nameserver change is not allowed for the
+  # domain"). Dar por bueno el CONFIRMED es reportar un cambio que nunca ocurrio
+  # y descubrirlo horas mas tarde (6-ago-2026).
+  info "operacion $opid — esperando el veredicto…"
+  local i est err
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    sleep 3
+    est=$(curl -s -m 20 -H "Authorization: Bearer $pat" -H "Accept: application/json" \
+      "https://api.godaddy.com/v3/domains/operations/$opid" | python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: print("|"); sys.exit(0)
+e=(d.get("error") or {}).get("message","")
+print("%s|%s" % (d.get("status",""), e))')
+    err="${est#*|}"; est="${est%%|*}"
+    case "$est" in
+      COMPLETED|SUCCESS|SUCCEEDED) break ;;
+      FAILED|REJECTED|CANCELLED)   mal "GoDaddy la rechazo: ${err:-sin motivo}"; return 1 ;;
+    esac
+  done
+  # CONFIRMED indefinido tras 30s: no ha fallado, pero tampoco esta hecho
+  case "$est" in
+    COMPLETED|SUCCESS|SUCCEEDED) ok "aplicado" ;;
+    *) info "sigue en '$est' tras 30 s — confirmalo contra el registro antes de darlo por hecho" ;;
+  esac
 
   for n in $nuevos; do ok "$n"; done
   echo
-  info "la delegacion tarda entre 1 y 30 min en llegar a los gTLD. La verdad:"
-  info "    dig +noall +authority NS $d @a.gtld-servers.net"
+  info "la delegacion tarda de 1 a 30 min en llegar al registro (un .es, hasta 1 h). La verdad:"
+  info "    correo.sh estado $d"
 }
 
 # ---------------------------------------------------------------------------
