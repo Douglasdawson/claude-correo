@@ -27,8 +27,10 @@
 #     sobre), el log de la app dice "sent", test da 250, el DNS tiene MX. Las
 #     cuatro son ciertas y compatibles con que el mensaje se haya tirado. Lo unico
 #     que prueba que el correo llega es ABRIR EL BUZON. El 6-ago-2026 se dio por
-#     bueno un flujo leyendo "notification sent" en un log mientras Cloudflare
-#     descartaba cada mensaje: se perdieron solicitudes de clientes
+#     bueno un flujo leyendo "notification sent" en un log: se perdieron
+#     solicitudes de clientes. Y ojo, que la analitica de Cloudflare tambien
+#     decia delivered — el que no los enseñaba era el buzon de destino. Ni el log
+#     de tu app ni el del enrutador prueban que alguien lo haya leido
 #   · "ACEPTADO" NO ES "HECHO". Casi nada aqui es sincrono: el registrador acepta
 #     el cambio de NS (status:CONFIRMED) y lo rechaza segundos despues en la
 #     operacion; Resend acepta el alta y verifica luego; Cloudflare acepta el
@@ -1002,9 +1004,56 @@ EOF
   fi
 }
 
+
+# ---------------------------------------------------------------------------
+# entregas — que hizo Cloudflare con cada mensaje que entro en el dominio.
+# La fuente que zanja "no me llega el correo": dice si el mensaje llego a
+# Cloudflare y si lo reenvio. Si aqui pone delivered/forward y en la bandeja no
+# esta, el que lo pierde es el buzon de destino, no el enrutado — que es
+# exactamente lo que costo dos diagnosticos falsos el 6-ago-2026.
+# Necesita Zone -> Analytics -> Read en el token.
+# ---------------------------------------------------------------------------
+cmd_entregas() {
+  need_cf
+  local d="${1:-}" desde="${2:-}"
+  [ -n "$d" ] || { echo "uso: correo.sh entregas <dominio> [YYYY-MM-DDTHH:MM:SSZ]" >&2; return 1; }
+  local z; z=$(zid "$d") || return 1
+  [ -n "$desde" ] || desde=$(date -u -v-1d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)
+
+  titulo "$d — entregas desde $desde"
+  local q; q=$(python3 -c '
+import json, sys
+z, desde = sys.argv[1], sys.argv[2]
+print(json.dumps({"query": """query { viewer { zones(filter: {zoneTag: "%s"}) {
+  emailRoutingAdaptiveGroups(limit: 200, filter: {datetime_geq: "%s"}, orderBy: [datetimeMinute_ASC])
+  { count dimensions { datetimeMinute status action } } } } }""" % (z, desde)}))' "$z" "$desde")
+
+  curl -s -m 30 -X POST "https://api.cloudflare.com/client/v4/graphql"     -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json" --data "$q"   | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+if d.get("errors"):
+    m = d["errors"][0].get("message","")
+    print("  ✗ " + m[:160])
+    if "analytics.read" in m:
+        print("  · al token le falta Zone → Analytics → Read")
+    sys.exit(1)
+gs = (((d.get("data") or {}).get("viewer") or {}).get("zones") or [{}])[0].get("emailRoutingAdaptiveGroups") or []
+if not gs:
+    print("  · ningun mensaje registrado en ese periodo")
+    sys.exit(0)
+tot = 0
+for g in gs:
+    x = g["dimensions"]; tot += g["count"]
+    print("  %s  x%-3d %s / %s" % (x.get("datetimeMinute","")[:16].replace("T"," "), g["count"], x.get("status"), x.get("action")))
+print()
+print("  %d mensajes. Si aqui salen como delivered y en la bandeja no estan," % tot)
+print("  el que los pierde es el buzon de destino, no el enrutado.")'
+}
+
 # ---------------------------------------------------------------------------
 case "${1:-}" in
   flota)        shift; cmd_flota "$@" ;;
+  entregas)     shift; cmd_entregas "$@" ;;
   ns)           shift; cmd_ns "$@" ;;
   inventario)   shift; cmd_inventario "$@" ;;
   precheck)     shift; cmd_precheck "$@" ;;
@@ -1018,5 +1067,5 @@ case "${1:-}" in
   test)         shift; cmd_test "$@" ;;
   probar-envio) shift; cmd_probar_envio "$@" ;;
   estado)       shift; cmd_estado "$@" ;;
-  *) echo "uso: correo.sh [estado|flota|permisos|inventario|precheck|zona|paridad|entrante|destinos|saliente|dmarc|test|probar-envio] <dominio> …" >&2; exit 1 ;;
+  *) echo "uso: correo.sh [estado|flota|entregas|permisos|inventario|precheck|zona|paridad|entrante|destinos|saliente|dmarc|test|probar-envio] <dominio> …" >&2; exit 1 ;;
 esac

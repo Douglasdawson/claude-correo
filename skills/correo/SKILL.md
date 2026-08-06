@@ -32,6 +32,7 @@ bash $C paridad <dominio>                    # ¿sirve lo mismo que el registrad
 bash $C ns <dominio> [--a-cloudflare]        # los NS en el registrador; los cambia si paridad va verde
 bash $C entrante <dominio> <destino>         # Email Routing + catch-all
 bash $C destinos <dominio>                   # quién recibe y si está VERIFICADO ← el fallo nº1
+bash $C entregas <dominio> [desde]           # qué hizo Cloudflare con cada mensaje que entró
 bash $C saliente <dominio> <fichero-token>   # Resend: alta, DKIM, verificación
 bash $C dmarc <dominio> none|quarantine [rua]
 bash $C test <dominio> [dirección]           # handshake SMTP SIN enviar nada
@@ -216,24 +217,35 @@ Activa Email Routing, crea MX + SPF + DKIM, da de alta el destino y pone el **ca
   Cloudflare, queda verificado al instante); **con el buzón de un cliente es EL paso bloqueante**,
   y es suyo, no tuyo: hay que pedírselo y esperar. `entrante` lo canta al terminar, `estado` lo
   lleva en su línea `destino:` y `destinos` es la comprobación explícita.
-- 🔴 **El reenvío pierde mensajes, y no de forma determinista. No apoyes nada crítico en él.**
-  Lo observado el 6-ago-2026, midiendo con envíos reales y mirando la bandeja (no el log):
-  - Una app enviaba desde `info@dominio` sus avisos internos **a `info@dominio`**. Ni uno solo
-    llegó en media hora — varios mensajes reales, ni en spam. Se perdieron solicitudes de
-    clientes. Al mover el buzón interno FUERA del dominio, empezaron a llegar todos.
-  - Pero al intentar reproducir la causa en otro dominio, **el mismo patrón exacto llegó unas
-    veces y otras no**: remitente y destinatario idénticos entregó; dos envíos con las mismas
-    dos direcciones, uno llegó y el otro no apareció jamás.
+- 🔴 **Un mensaje reenviado llega "casi siempre", y ese casi se come leads. Cloudflare NO es el
+  culpable: es el buzón de destino.** Medido el 6-ago-2026 cruzando la analítica de Email Routing
+  con la bandeja real:
+  - De 19 mensajes registrados en dos zonas, Cloudflare reenvió **el 100%**: todos
+    `status=delivered, action=forward`. No descarta nada.
+  - Y aun así **tres no aparecieron nunca** en el Gmail de destino — ni en Recibidos, ni en Spam,
+    ni en Papelera. Gmail los acepta y no los enseña.
+  - El corte es nítido: **lo que llegó DIRECTO llegó siempre; lo reenviado, unas veces sí y otras
+    no.** Dos avisos del mismo remitente con nueve minutos de diferencia: el reenviado
+    desapareció, el directo llegó.
 
-  O sea: **hay pérdida real y no se sabe el mecanismo.** No es "mismo dominio" ni "misma
-  dirección" — eso se probó y es falso. La regla práctica que sí se sostiene:
+  Causa probable (hipótesis, no dato): al reenviar, el SPF deja de corresponder con quien
+  entrega, y el filtro del buzón de destino se pone duro; cuando decide tirarlo no lo manda a
+  spam, lo descarta.
 
-  → **Lo que no te puedes permitir perder no pasa por el reenvío.** El buzón que recibe avisos
-  internos (reservas, formularios, pedidos) se pone **directo**, fuera del dominio enrutado, y
-  con el menor número de saltos posible. El reenvío es perfecto para `info@` de cara al público:
-  si se pierde un mensaje, el cliente reescribe. No lo es para un lead que solo llega una vez.
-  → Y **verificar por el log de la app no vale**: dice "sent" igual. La prueba es abrir el buzón,
-  y con envíos repetidos — uno solo no distingue "funciona" de "esta vez tuvo suerte".
+  → **Lo que solo llega una vez no pasa por el reenvío.** Avisos de reservas, formularios y
+  pedidos van a un buzón **directo**. El reenvío está perfecto para el `info@` público: si se
+  pierde uno, el cliente reescribe. Un lead no reescribe.
+  → **Para diagnosticar, la analítica de Cloudflare es la fuente que zanja la discusión** —
+  dice si el mensaje entró y qué hizo con él. Necesita `Zone → Analytics → Read` en el token:
+  ```
+  POST https://api.cloudflare.com/client/v4/graphql
+  { viewer { zones(filter:{zoneTag:"<id>"}) {
+      emailRoutingAdaptiveGroups(limit:50, filter:{datetime_geq:"..."},
+        orderBy:[datetimeMinute_ASC]) { count dimensions { datetimeMinute status action } } } } }
+  ```
+  Sin eso solo se puede especular — y especular aquí produjo dos diagnósticos falsos seguidos.
+  → Y **el log de la app no vale como prueba**: dice "sent" igual. La prueba es abrir el buzón,
+  con envíos repetidos: uno solo no distingue "funciona" de "esta vez tuvo suerte".
 - ⚠️ **`test` da 250 aunque el destino esté sin verificar**: el MX de Cloudflare acepta el sobre
   antes de mirar la ruta. `test` verde ≠ correo entregado. La prueba buena es `destinos`.
 - ⚠️ **Se niega si el dominio ya tiene MX de otro proveedor.** Montar Email Routing encima deja a
