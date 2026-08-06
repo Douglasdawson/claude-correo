@@ -526,7 +526,14 @@ print("%s|%s" % (d.get("status",""), e))')
     err="${est#*|}"; est="${est%%|*}"
     case "$est" in
       COMPLETED|SUCCESS|SUCCEEDED) break ;;
-      FAILED|REJECTED|CANCELLED)   mal "GoDaddy la rechazo: ${err:-sin motivo}"; return 1 ;;
+      FAILED|REJECTED|CANCELLED)
+        mal "GoDaddy la rechazo: ${err:-sin motivo}"
+        case "$err" in *"not allowed"*)
+          info "OJO: ese error NO es un candado del dominio — el panel hace el mismo"
+          info "cambio sin problema. Es un limite de la API en algunos dominios."
+          info "Manda al humano a dcc.godaddy.com → $d → Nameservers → Change" ;;
+        esac
+        return 1 ;;
     esac
   done
   # CONFIRMED indefinido tras 30s: no ha fallado, pero tampoco esta hecho

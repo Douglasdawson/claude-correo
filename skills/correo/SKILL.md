@@ -152,9 +152,12 @@ Gotchas de la API de GoDaddy, que costaron un rato:
   dominio que devolvió `CONFIRMED` **tres veces** y nunca cambió: la operación decía
   `FAILED — "Nameserver change is not allowed for the domain"`. Si te quedas en el `CONFIRMED`
   reportas un cambio que no ha ocurrido y lo descubres horas después. `ns` ya espera el veredicto.
-  - Ese mensaje suele ser un **bloqueo de 60 días** tras cambiar titular o contactos, o un
-    producto de GoDaddy que gestiona el DNS y fija los nameservers. Cuál de los dos solo lo dice
-    su panel: el aviso que sale al intentarlo a mano es el diagnóstico.
+- 🔴 **Y ese `"Nameserver change is not allowed"` NO significa que el dominio esté bloqueado: el
+  panel hace el mismo cambio sin rechistar.** Es una limitación de la propia API en algunos
+  dominios — el que la sufrió era de 2020 y los que pasaron sin problema eran de 2026, con
+  ficha, estados EPP (`client*Prohibited`) y DNSSEC **idénticos**. No hay forma de verlo desde
+  fuera y no hay nada que desbloquear. **Ante ese error: manda al humano al panel, no le digas
+  que espere 60 días.** Tardó 2 minutos y se delegó en 30 segundos.
 - Los **PAT solo valen para `v3`**. Contra `v1` dan `401` sin explicar nada, y es fácil leerlo
   como "token mal copiado". La ruta buena es
   `PUT /v3/domains/domain-names/{dominio}/nameservers`, con el body como **array plano**.
