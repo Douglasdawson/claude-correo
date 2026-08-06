@@ -597,7 +597,42 @@ cmd_entrante() {
   titulo "activando Email Routing"
   cf_ok "$(cf_post "/zones/$z/email/routing/enable" '{}')" \
     && ok "servicio activo" \
-    || info "no se pudo activar por API (¿falta Zone→Email Routing→Edit?) — puede que ya lo estuviera"
+    || info "no se pudo activar por API — publico yo los registros"
+
+  # El endpoint /email/routing/enable pide un permiso que el token de esta skill
+  # NO tiene (los de Email Routing cubren las REGLAS, no los ajustes del
+  # servicio). Sin el, entrante dejaba el catch-all creado y el dominio SIN MX:
+  # o sea, sin recibir, y saliendo todo en verde. Los MX se pueden publicar por
+  # la API de DNS, que si esta permitida — que es lo que se acabo haciendo a mano
+  # tres veces el mismo dia antes de meterlo aqui.
+  local mx_apex spf_apex
+  mx_apex=$(cf_get "/zones/$z/dns_records?type=MX" | python3 -c '
+import json, sys
+d = sys.argv[1]
+print(len([x for x in (json.load(sys.stdin).get("result") or []) if x["name"] == d]))' "$d")
+  if [ "$mx_apex" = "0" ]; then
+    local p
+    for p in "36 route1" "52 route2" "92 route3"; do
+      cf_post "/zones/$z/dns_records" \
+        "{\"type\":\"MX\",\"name\":\"$d\",\"content\":\"${p#* }.mx.cloudflare.net\",\"priority\":${p%% *},\"ttl\":1}" > /dev/null
+    done
+    ok "MX de Email Routing publicados"
+  else
+    info "el apex ya tiene MX, no los toco"
+  fi
+  # ⚠ Solo puede haber UN SPF por nombre: dos se anulan entre si. Si el dominio
+  # ya envia (Resend suele ponerlo en send.), el del apex puede existir o no.
+  spf_apex=$(cf_get "/zones/$z/dns_records?type=TXT" | python3 -c '
+import json, sys
+d = sys.argv[1]
+print(len([x for x in (json.load(sys.stdin).get("result") or []) if x["name"] == d and "spf1" in x.get("content","")]))' "$d")
+  if [ "$spf_apex" = "0" ]; then
+    cf_post "/zones/$z/dns_records" \
+      "{\"type\":\"TXT\",\"name\":\"$d\",\"content\":\"v=spf1 include:_spf.mx.cloudflare.net ~all\",\"ttl\":1}" > /dev/null
+    ok "SPF publicado"
+  else
+    info "el apex ya tiene SPF, NO lo toco (dos se anulan entre si)"
+  fi
 
   titulo "destino $dest"
   local r; r=$(cf_post "/accounts/$acc/email/routing/addresses" "{\"email\":\"$dest\"}")
