@@ -216,6 +216,18 @@ Activa Email Routing, crea MX + SPF + DKIM, da de alta el destino y pone el **ca
   Cloudflare, queda verificado al instante); **con el buzón de un cliente es EL paso bloqueante**,
   y es suyo, no tuyo: hay que pedírselo y esperar. `entrante` lo canta al terminar, `estado` lo
   lleva en su línea `destino:` y `destinos` es la comprobación explícita.
+- 🔴 **Email Routing DESCARTA en silencio el correo cuyo remitente pertenece al dominio que
+  enruta.** Es su anti-bucle, y no deja ni rastro: el proveedor de envío lo acepta, tu app
+  registra "enviado", el buzón no recibe nada — ni en spam. Muerde en el caso más común de
+  todos: **la app que envía desde `info@tudominio.com` y manda sus avisos internos a
+  `info@tudominio.com`**. Se pierden solicitudes de clientes sin que salte una sola alarma.
+  Comprobado el 6-ago-2026 con dos envíos idénticos al mismo buzón: desde otro dominio llega,
+  desde el propio no aparece.
+  → **El buzón que recibe los avisos internos tiene que estar FUERA del dominio enrutado**
+  (un Gmail, otro dominio). Lo que ve el cliente —remitente, `Reply-To`, web, legales— sí puede
+  ser `info@`: un cliente que responde es remitente externo y su correo se entrega bien.
+  → Y por eso **verificar mirando el log de la app no vale**: dice "sent" igual. La prueba es
+  abrir el buzón.
 - ⚠️ **`test` da 250 aunque el destino esté sin verificar**: el MX de Cloudflare acepta el sobre
   antes de mirar la ruta. `test` verde ≠ correo entregado. La prueba buena es `destinos`.
 - ⚠️ **Se niega si el dominio ya tiene MX de otro proveedor.** Montar Email Routing encima deja a
