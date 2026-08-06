@@ -52,26 +52,26 @@ rs_post() { curl -s -m 25 -X POST -H "Authorization: Bearer $RS_TOKEN" -H "Conte
 
 # dig_ TIPO nombre [servidor] — el tipo NUNCA es opcional (ver cabecera)
 dig_() {
-  local tipo="$1" nombre="$2" ns="${3:-}" r
-  _dig1() { if [ -n "$ns" ]; then dig +short +time=3 +tries=1 "$tipo" "$nombre" "@$ns" 2>/dev/null
-            else dig +short +time=3 +tries=1 "$tipo" "$nombre" 2>/dev/null; fi; }
-  # Un dig VACIO no prueba que el registro no exista: un timeout devuelve
-  # exactamente lo mismo, y aqui "vacio" se traduce en veredictos del tipo
-  # "sin MX, no recibe correo" sobre un dominio perfectamente montado (paso
-  # 3 veces el 6-ago-2026). Midiendo desde esa maquina se perdia ~30% de las
-  # respuestas, por UDP y por TCP: no era el dominio, era la red.
-  # Se reintenta contra el MISMO servidor a proposito — 'paridad' compara con
-  # un autoritativo concreto y saltar a otro resolver mentiria.
-  # ponytail: 4 intentos ciegos; con 30% de perdida deja ~1% de falso negativo.
-  # Si hiciera falta mas fino, mirar el 'status:' de la respuesta completa
-  # (NOERROR sin answers = no existe DE VERDAD; sin status = no hubo respuesta).
-  local i
-  for i in 1 2 3 4; do
-    r=$(_dig1); [ -n "$r" ] && break
+  local tipo="$1" nombre="$2" ns="${3:-}" r i bruto
+  # Se pide la respuesta COMPLETA, no +short, para poder distinguir dos cosas
+  # que +short devuelve identicas (nada):
+  #   · el servidor contesto "no existe"  → hay linea 'status:'  → es la verdad
+  #   · no contesto nadie (timeout)       → no hay 'status:'     → hay que reintentar
+  # Sin esta distincion, con perdida de paquetes 'paridad' inventa un DIFIERE
+  # por pasada (66 nombres x 2 lados = 132 consultas) y frena migraciones sanas.
+  _resp() { if [ -n "$ns" ]; then dig +noall +comments +answer +time=3 +tries=1 "$tipo" "$nombre" "@$ns" 2>/dev/null
+            else dig +noall +comments +answer +time=3 +tries=1 "$tipo" "$nombre" 2>/dev/null; fi; }
+  for i in 1 2 3 4 5 6; do
+    bruto=$(_resp)
+    case "$bruto" in *"status: "*) break ;; esac
+    bruto=""
   done
+  # de la seccion ANSWER a lo mismo que daria +short (rdata desde el campo 5)
+  r=$(printf '%s\n' "$bruto" | awk '/^;/ {next} NF>4 {out=$5; for(i=6;i<=NF;i++) out=out" "$i; print out}')
   [ -n "$r" ] && printf '%s\n' "$r"
   return 0
 }
+
 
 titulo() { printf '\n── %s ──\n' "$1"; }
 ok()     { printf '  ✓ %s\n' "$1"; }
