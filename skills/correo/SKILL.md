@@ -22,6 +22,8 @@ script**, no lo improvises en el chat.
 ```bash
 C="$(dirname "$0")/correo.sh"   # o la ruta donde tengas la skill
 bash $C estado <dominio>                     # foto: qué hay montado y qué falta
+bash $C flota [dominio...]                   # la cartera entera en una tabla (o por stdin)
+bash $C flota --montar <destino> [dominio…]  # monta el entrante de los que falten, de golpe
 bash $C permisos [dominio]                   # qué puede hacer el token, ANTES de pelearte con un 10000
 bash $C precheck <dominio>                   # ANTES de tocar nada: DNSSEC, NS, correo ajeno
 bash $C inventario <dominio>                 # todos los registros, con el tipo explícito
@@ -253,6 +255,45 @@ punto 1 — recibir en `info@` funciona sin que él toque nada más.
 - **Poner `p=reject` de entrada**: correo legítimo perdido, sin rebote que lo delate.
 - **Dar por bueno un panel.** Todo se verifica con `dig` contra el autoritativo o con `test`.
 - **Escribir una API key en un formulario web**: al portapapeles y la pega el humano.
+
+## Una cartera de dominios, no uno: qué se hace UNA vez y qué se repite
+
+La pregunta que sale en cuanto hay más de un dominio es "¿tengo que repetir esto cada vez?".
+La respuesta honesta, por capas:
+
+| | ¿Cuántas veces? |
+|---|---|
+| El token con los 4 permisos | **una vez en la vida** |
+| **El destino verificado** | **una vez por buzón, NO por dominio** — es de CUENTA |
+| Delegar el dominio a Cloudflare (cambiar NS) | una vez **por dominio**, irreducible |
+| `entrante` + catch-all | un comando, sin humano, si el destino ya está verificado |
+| Verificar el dominio en Resend (envío) | una vez por dominio **que envíe** |
+
+**Lo que rompe la sensación de "cada vez" es el destino.** El correo de confirmación de
+Cloudflare va al buzón, y el buzón es de cuenta: verificado una vez, **todos los dominios
+siguientes lo reutilizan sin que llegue ningún correo ni haya que pulsar nada**. Por eso el
+primer dominio duele y el décimo son 30 segundos. Dilo al planificar, o el usuario presupone
+un paso manual por dominio que no existe.
+
+**Lo único irreducible es la delegación**: un dominio tiene que apuntar sus NS a Cloudflare, y
+eso se hace en el registrador. Dos formas de que deje de aparecer:
+
+- Los dominios **que ya tiene**: es una tarde, una vez. `flota` dice cuáles faltan.
+- Los **futuros**: registrarlos en **Cloudflare Registrar** — nacen ya en la cuenta y delegados,
+  así que "registrar el dominio" y "tener correo" pasan a ser el mismo paso. ⚠️ Su lista de TLDs
+  es amplia en gTLDs (`.com`, `.net`, `.org`…) pero **no cubre muchos ccTLD** — `.es`, por
+  ejemplo, no está. Compruébalo antes de prometerlo: para esos, registrador de siempre y un
+  cambio de NS.
+
+⚠️ **`flota --montar` solo toca los dominios sin MX y ya delegados a Cloudflare.** En una cartera
+de agencia lo normal es que la mitad tenga el correo del cliente (Google Workspace, el hosting
+de su primo, lo que sea): montar Email Routing encima **deja al cliente sin correo**. Por eso el
+bucle salta todo lo que tenga MX ajeno, y por eso `--montar` pide el destino explícito en vez de
+recordar el último usado.
+
+Para el envío, el plan gratis de Resend admite **1 dominio por cuenta**: con una cartera, o son
+N cuentas (cada una con su token) o se pasa a un plan que admita varios dominios. Es una decisión
+de negocio, no técnica — pero cuéntala antes de montar la tercera cuenta gratis.
 
 ## Cuándo NO usar esta skill
 

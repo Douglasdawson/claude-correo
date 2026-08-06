@@ -665,7 +665,91 @@ cmd_estado() {
 }
 
 # ---------------------------------------------------------------------------
+# flota — el estado de N dominios en una tabla, para no ir dominio por dominio.
+# La lista sale de argv, de stdin (un dominio por linea) o, sin nada, de las
+# zonas de la cuenta de Cloudflare. Lo normal es que la cartera de dominios viva
+# fuera de esta skill (el panel, el hosting, una hoja): por eso se acepta stdin
+# en vez de acoplar esto a ningun inventario concreto.
+#
+# 'flota --montar <destino>' aplica 'entrante' a los que les falte. Solo toca
+# los que ya estan en Cloudflare y sin MX ajeno: entrante se niega solo en el
+# resto, y un dominio con correo de otro no se pisa en un bucle desatendido.
+# ---------------------------------------------------------------------------
+cmd_flota() {
+  local montar="" destino=""
+  if [ "${1:-}" = "--montar" ]; then
+    montar=1; destino="${2:-}"; shift 2
+    [ -n "$destino" ] || { echo "uso: correo.sh flota --montar <destino> [dominio...]" >&2; return 1; }
+  fi
+
+  local ds=()
+  if [ $# -gt 0 ]; then ds=("$@")
+  elif [ ! -t 0 ]; then
+    local l; while IFS= read -r l; do l="${l// /}"; [ -n "$l" ] && ds+=("$l"); done
+  fi
+  if [ ${#ds[@]} -eq 0 ]; then
+    need_cf
+    local z; while IFS= read -r z; do [ -n "$z" ] && ds+=("$z"); done <<EOF
+$(cf_get "/zones?per_page=200" | python3 -c '
+import json, sys
+try: r = json.load(sys.stdin).get("result") or []
+except Exception: r = []
+for z in r: print(z["name"])')
+EOF
+    [ ${#ds[@]} -gt 0 ] || { echo "sin dominios: pasalos por argv o por stdin" >&2; return 1; }
+    info "sin lista: uso las ${#ds[@]} zonas de la cuenta de Cloudflare"
+  fi
+
+  titulo "flota — ${#ds[@]} dominios"
+  printf '  %-34s %-11s %-14s %s\n' dominio DNS entrante saliente
+  local d mx dkim ns dns ent sal sin_ent=0 sin_sal=0 pendientes=()
+  for d in "${ds[@]}"; do
+    ns=$(ns_reales "$d" | tr '\n' ' ')
+    if [ -z "$ns" ];                          then dns="sin NS"
+    elif echo "$ns" | grep -q cloudflare;     then dns="Cloudflare"
+    else dns="externo"; fi
+
+    # ASCII en la tabla a proposito: printf %-14s cuenta BYTES, y un guion largo
+    # son 3 — la columna se descuadra justo en las filas que hay que mirar
+    mx=$(dig_ MX "$d" 1.1.1.1)
+    if   echo "$mx" | grep -q 'mx\.cloudflare\.net'; then ent="Cloudflare"
+    elif [ -n "$mx" ];                               then ent="otro proveedor"
+    else ent="NO RECIBE"; sin_ent=$((sin_ent+1))
+         [ "$dns" = "Cloudflare" ] && pendientes+=("$d"); fi
+
+    dkim=$(dig_ TXT "resend._domainkey.$d" 1.1.1.1)
+    if [ -n "$dkim" ]; then sal="Resend"; else sal="no"; sin_sal=$((sin_sal+1)); fi
+
+    printf '  %-34s %-11s %-14s %s\n' "$d" "$dns" "$ent" "$sal"
+  done
+
+  echo
+  info "$sin_ent sin entrante · $sin_sal sin DKIM de envio"
+
+  if [ -n "$montar" ]; then
+    if [ ${#pendientes[@]} -eq 0 ]; then
+      ok "nada que montar: los que faltan no estan en Cloudflare (antes hay que migrar su DNS)"
+      return 0
+    fi
+    titulo "montando el entrante de ${#pendientes[@]} dominios → $destino"
+    local fallos=0
+    for d in "${pendientes[@]}"; do
+      ZID_CACHE=""   # el cache es por dominio; sin esto el 2o usaria la zona del 1o
+      cmd_entrante "$d" "$destino" || fallos=$((fallos+1))
+    done
+    echo
+    [ "$fallos" -eq 0 ] && ok "montados los ${#pendientes[@]}" || mal "$fallos de ${#pendientes[@]} fallaron"
+    info "el destino se verifica UNA vez por cuenta: si ya lo estaba, no llega ningun correo de confirmacion"
+  elif [ ${#pendientes[@]} -gt 0 ]; then
+    info "de los que NO reciben, ${#pendientes[@]} ya estan en Cloudflare y se montan de golpe:"
+    info "    correo.sh flota --montar <destino> ${pendientes[*]}"
+    info "el resto necesita antes su DNS en Cloudflare (precheck → zona → paridad → NS)"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 case "${1:-}" in
+  flota)        shift; cmd_flota "$@" ;;
   inventario)   shift; cmd_inventario "$@" ;;
   precheck)     shift; cmd_precheck "$@" ;;
   zona)         shift; cmd_zona "$@" ;;
@@ -678,5 +762,5 @@ case "${1:-}" in
   test)         shift; cmd_test "$@" ;;
   probar-envio) shift; cmd_probar_envio "$@" ;;
   estado)       shift; cmd_estado "$@" ;;
-  *) echo "uso: correo.sh [estado|permisos|inventario|precheck|zona|paridad|entrante|destinos|saliente|dmarc|test|probar-envio] <dominio> …" >&2; exit 1 ;;
+  *) echo "uso: correo.sh [estado|flota|permisos|inventario|precheck|zona|paridad|entrante|destinos|saliente|dmarc|test|probar-envio] <dominio> …" >&2; exit 1 ;;
 esac
