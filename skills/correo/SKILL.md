@@ -146,6 +146,15 @@ registrador es una función más ahí.
 
 Gotchas de la API de GoDaddy, que costaron un rato:
 
+- 🔴 **`status: CONFIRMED` en la respuesta del `PUT` NO significa "hecho": significa "aceptada
+  para procesar".** El veredicto real aparece unos segundos después en
+  `GET /v3/domains/operations/{operationId}`, y puede ser `FAILED` con su motivo. Pasó con un
+  dominio que devolvió `CONFIRMED` **tres veces** y nunca cambió: la operación decía
+  `FAILED — "Nameserver change is not allowed for the domain"`. Si te quedas en el `CONFIRMED`
+  reportas un cambio que no ha ocurrido y lo descubres horas después. `ns` ya espera el veredicto.
+  - Ese mensaje suele ser un **bloqueo de 60 días** tras cambiar titular o contactos, o un
+    producto de GoDaddy que gestiona el DNS y fija los nameservers. Cuál de los dos solo lo dice
+    su panel: el aviso que sale al intentarlo a mano es el diagnóstico.
 - Los **PAT solo valen para `v3`**. Contra `v1` dan `401` sin explicar nada, y es fácil leerlo
   como "token mal copiado". La ruta buena es
   `PUT /v3/domains/domain-names/{dominio}/nameservers`, con el body como **array plano**.
@@ -308,6 +317,14 @@ punto 1 — recibir en `info@` funciona sin que él toque nada más.
 - **Dar por montado el correo sin ver el destino VERIFICADO.**
 - **Poner `p=reject` de entrada**: correo legítimo perdido, sin rebote que lo delate.
 - **Dar por bueno un panel.** Todo se verifica con `dig` contra el autoritativo o con `test`.
+- **Dar por bueno un "aceptado".** En este flujo casi nada es síncrono: el registrador *acepta*
+  el cambio de NS, Resend *acepta* el alta del dominio, Cloudflare *acepta* el destino. Las tres
+  cosas pueden fallar **después**, y ninguna de las tres se entera sola. La regla: cuando una
+  API devuelva un identificador de operación o un estado `pending`, **el trabajo no ha terminado
+  hasta que sondees el resultado**. Y el resultado bueno se confirma en la fuente independiente
+  —el registro del TLD, `destinos`, `dig` contra el autoritativo—, no en la misma API que dijo
+  que sí. Cada comando de aquí que hace algo asíncrono espera su veredicto; si añades otro,
+  mantén esa forma.
 - **Escribir una API key en un formulario web**: al portapapeles y la pega el humano.
 
 ## Una cartera de dominios, no uno: qué se hace UNA vez y qué se repite

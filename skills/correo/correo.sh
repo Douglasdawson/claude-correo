@@ -21,6 +21,14 @@
 #   · GET /accounts devuelve VACIO con el token de esta skill (los 5 permisos no
 #     incluyen Account Settings→Read). Por eso el account id sale de una zona,
 #     no de /accounts: asi zona no abortaba en el primer dominio (1-ago-2026)
+#   · "ACEPTADO" NO ES "HECHO". Casi nada aqui es sincrono: el registrador acepta
+#     el cambio de NS (status:CONFIRMED) y lo rechaza segundos despues en la
+#     operacion; Resend acepta el alta y verifica luego; Cloudflare acepta el
+#     destino y lo deja sin verificar. Si una API devuelve un operationId o un
+#     estado pending, el trabajo NO ha terminado: se sondea. Y se confirma en la
+#     fuente independiente (registro del TLD, destinos, dig al autoritativo), no
+#     en la misma API que dijo que si (6-ago-2026: tres CONFIRMED seguidos sobre
+#     un cambio que nunca ocurrio)
 #   · UN DESTINO SIN VERIFICAR NO REENVIA NADA, y no se nota: el catch-all se
 #     crea igual y test da 250 porque el MX de Cloudflare acepta el sobre antes
 #     de mirar la ruta. Con tu propio buzon nunca pasa (Cloudflare lo verifica
