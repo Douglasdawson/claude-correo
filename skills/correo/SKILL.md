@@ -74,11 +74,20 @@ En [API tokens](https://dash.cloudflare.com/profile/api-tokens) → *Create Cust
 **los cuatro permisos**, y en Zone Resources → *All zones*:
 
 ```
-Account │ Zone                     │ Edit    ← crear zonas
-Account │ Email Routing Addresses  │ Edit    ← destinos (son de CUENTA, no de zona)
+Zone    │ Zone                     │ Edit    ← crear zonas (NO es "Account → Zone")
 Zone    │ DNS                      │ Edit
 Zone    │ Email Routing            │ Edit    ← reglas y catch-all
+Account │ Email Routing Addresses  │ Edit    ← destinos (el ÚNICO de cuenta)
 ```
+
+⚠️ **Crear zonas es `Zone → Zone → Edit`, aunque el error diga `com.cloudflare.api.account.zone.create`.**
+El scope lleva "account" en el nombre y el permiso está bajo **Zone**; buscar "zone" en el
+desplegable de *Account* no devuelve nada parecido (el buscador hace match difuso y saca
+"Access: Organizations" o "Zero Trust Resilience"). La plantilla *Edit zone DNS* deja ese permiso
+en **Read**: no hay que añadir una fila, hay que **subir la que ya está de Read a Edit**.
+Y como `Email Routing Addresses` sí es de cuenta, el token necesita además un **Account Resource**
+(*Include → All accounts*): un token de plantilla solo trae *Zone Resources* y sin la cuenta ese
+permiso no se puede guardar.
 
 Se guarda en `~/.config/cloudflare-api.token`.
 

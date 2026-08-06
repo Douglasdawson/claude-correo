@@ -275,7 +275,10 @@ cmd_zona() {
   [ -n "$acc" ] || acc=$(acc_id) || { mal "pasa el account id como 2º argumento"; return 1; }
 
   local resp; resp=$(cf_post "/zones" "{\"name\":\"$d\",\"account\":{\"id\":\"$acc\"},\"type\":\"full\"}")
-  cf_ok "$resp" || { mal "no se pudo crear la zona (si dice zone.create, al token le falta Account→Zone→Edit)"; return 1; }
+  # ojo al nombre: el scope se llama account.zone.create pero el permiso del panel
+  # es Zone → Zone → Edit. Decir "Account" manda al usuario a un desplegable donde
+  # no existe (6-ago-2026, un viaje entero perdido buscandolo ahi)
+  cf_ok "$resp" || { mal "no se pudo crear la zona (si dice zone.create, el token tiene Zone→Zone en Read: subelo a Edit)"; return 1; }
 
   ok "zona creada"
   printf '%s' "$resp" | python3 -c '
@@ -412,8 +415,8 @@ cmd_permisos() {
   if [ -z "$a" ]; then
     mal "no puedo resolver el account id: sin esto no se puede comprobar mas"; return 1
   fi
-  if puede_crear_zonas "$a"; then ok "Account → Zone → Edit        (crear zonas)"
-  else mal "Account → Zone → Edit        (crear zonas)"; fi
+  if puede_crear_zonas "$a"; then ok "Zone → Zone → Edit          (crear zonas)"
+  else mal "Zone → Zone → Edit          (crear zonas) — hoy esta en Read"; fi
   probar_permiso "Account → Email Routing Addresses (destinos)" "/accounts/$a/email/routing/addresses?per_page=1"
   # Los permisos de zona se comprueban sobre CUALQUIER zona de la cuenta: el caso
   # normal es preguntar por un dominio que aun no esta en Cloudflare (justo antes
