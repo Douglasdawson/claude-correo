@@ -161,6 +161,25 @@ campo de nameservers, y `paridad` te dice si ya se puede tocar.
 
 - ⚠️ **DNSSEC activo + cambio de NS = dominio sin resolver del todo.** `precheck` lo comprueba y
   `zona` se niega a actuar. Hay que desactivarlo en el registrador y esperar a que caduque el DS.
+- 🔴 **El escaneo de importación de Cloudflare puede traer CERO registros, y la zona queda vacía
+  sin avisar de nada.** Pasó dos veces el 6-ago-2026. Si el registrador tiene API para leer la
+  zona, **lee la zona y cópiala** en vez de fiarte del escaneo: es la diferencia entre migrar y
+  adivinar. GoDaddy: `GET /v3/domains/zones/{dominio}/dns-records` con el mismo PAT. Al copiar,
+  saltar `SOA`, los `NS` del apex y `_domainconnect` (solo sirve dentro de GoDaddy).
+- 🔴 **Los servicios del registrador mueren al mover los NS, y `paridad` NO puede detectarlo.**
+  El caso real: un `www` con A a `15.197.x` / `3.33.x` — el redirector de GoDaddy. Copiarlo tal
+  cual deja la paridad **en verde** y la web del cliente rota al día siguiente, porque ese
+  servicio solo funciona con sus nameservers. Paridad compara DNS, no significado. Antes de
+  migrar, busca en la zona lo que apunte a infraestructura del registrador
+  (`secureserver.net`, `domaincontrol.com`, y los rangos de reenvío) y decide **a mano** a dónde
+  va cada uno. Un `www` así se repunta al servidor real, comprobando antes que el proxy tenga
+  configurado ese hostname.
+- ⚠️ **Tras repuntar un hostname nuevo al servidor, el certificado NO se emite solo.** Traefik
+  tenía el router y el `certresolver` correctos y aun así no pedía nada (reintentos viejos de
+  cuando el DNS apuntaba a otro sitio). Reiniciar el contenedor **no** bastó; **redesplegar la
+  app** sí: certificado en 20 s. Hazlo ANTES de que caduque la caché del registro viejo, no
+  después: con la delegación cacheada hasta 48 h, medio mundo sigue viendo la respuesta antigua
+  y el otro medio se comería un error de TLS.
 - ⚠️ **Cloudflare importa los registros en naranja (proxied) por defecto.** Con proxy naranja se
   rompe la renovación de certificado por HTTP-01 de cualquier ACME (Traefik, Caddy, certbot) y la
   web se queda sin https. El script crea todo con `proxied:false` y `paridad` falla si encuentra
