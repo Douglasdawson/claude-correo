@@ -467,9 +467,39 @@ print("  ✓ todos en DNS-only")'
 # ---------------------------------------------------------------------------
 gd_pat() { tr -d '\n\r' < "$HOME/.config/godaddy-pat.token" 2>/dev/null; }
 
+# ---------------------------------------------------------------------------
+# apuntar <dominio> <ip> — deja el apex y www con un A a esa IP, en gris.
+# Es el paso que falta cuando la web se muda de sitio: 'zona' crea la zona,
+# esto la rellena. Borra lo que hubiera en esos dos nombres (A o CNAME viejo):
+# apuntar significa apuntar, no acumular destinos.
+# ---------------------------------------------------------------------------
+cmd_apuntar() {
+  local d="${1:-}" ip="${2:-}"
+  [ -n "$d" ] && [ -n "$ip" ] || { echo "uso: correo.sh apuntar <dominio> <ip>" >&2; return 1; }
+  need_cf
+  local z; z=$(zid "$d") || { mal "la zona no existe en Cloudflare: 'correo.sh zona $d' primero"; return 1; }
+  titulo "$d — apuntando a $ip"
+  local nombre viejos id tipo r
+  for nombre in "$d" "www.$d"; do
+    viejos=$(cf_get "/zones/$z/dns_records?name=$nombre" | python3 -c '
+import json,sys
+for r in json.load(sys.stdin).get("result") or []:
+    if r["type"] in ("A","AAAA","CNAME"): print(r["id"], r["type"], r["content"])')
+    while read -r id tipo _; do
+      [ -n "$id" ] || continue
+      curl -s -m 25 -X DELETE -H "Authorization: Bearer $CF_TOKEN" "$CF_API/zones/$z/dns_records/$id" >/dev/null
+      info "borrado $tipo $nombre"
+    done <<<"$viejos"
+    r=$(cf_post "/zones/$z/dns_records" "$(python3 -c '
+import json,sys; print(json.dumps({"type":"A","name":sys.argv[1],"content":sys.argv[2],
+                                   "ttl":1,"proxied":False}))' "$nombre" "$ip")")
+    cf_ok "$r" && ok "A $nombre → $ip (gris)"
+  done
+}
+
 cmd_ns() {
-  local d="${1:-}" accion="${2:-}"
-  [ -n "$d" ] || { echo "uso: correo.sh ns <dominio> [--a-cloudflare]" >&2; return 1; }
+  local d="${1:-}" accion="${2:-}" forzar="${3:-}"
+  [ -n "$d" ] || { echo "uso: correo.sh ns <dominio> [--a-cloudflare] [--forzar]" >&2; return 1; }
   local pat; pat=$(gd_pat)
   [ -n "$pat" ] || { mal "falta ~/.config/godaddy-pat.token (developer.godaddy.com/personal-access-token)"; return 1; }
 
@@ -502,7 +532,17 @@ except Exception: print("")')
   # EL FRENO. Cambiar los NS con la zona a medias tira la web y todo lo que
   # cuelgue del dominio; por eso no se hace nunca sin paridad en verde.
   echo; info "comprobando paridad antes de tocar la delegacion…"
-  cmd_paridad "$d" || { echo; mal "paridad NO limpia: no cambio los nameservers"; return 1; }
+  if ! cmd_paridad "$d"; then
+    # --forzar es para UN caso: lo que difiere apunta a un sitio MUERTO y ya lo
+    # has comprobado (curl al destino viejo). Si el destino viejo responde, no
+    # lo uses: copia los registros y migra en dos pasos.
+    if [ "$forzar" != "--forzar" ]; then
+      echo; mal "paridad NO limpia: no cambio los nameservers"
+      info "si lo que difiere es un destino muerto que YA has comprobado: --forzar"
+      return 1
+    fi
+    echo; info "--forzar: sigo bajo tu responsabilidad (lo de arriba se pierde al cambiar los NS)"
+  fi
 
   local body; body=$(printf '%s' "$nuevos" | python3 -c '
 import json,sys; print(json.dumps(sys.stdin.read().split()))')
@@ -1094,6 +1134,7 @@ case "${1:-}" in
   precheck)     shift; cmd_precheck "$@" ;;
   zona)         shift; cmd_zona "$@" ;;
   paridad)      shift; cmd_paridad "$@" ;;
+  apuntar)      shift; cmd_apuntar "$@" ;;
   entrante)     shift; cmd_entrante "$@" ;;
   destinos)     shift; cmd_destinos "$@" ;;
   permisos)     shift; cmd_permisos "$@" ;;
@@ -1102,5 +1143,5 @@ case "${1:-}" in
   test)         shift; cmd_test "$@" ;;
   probar-envio) shift; cmd_probar_envio "$@" ;;
   estado)       shift; cmd_estado "$@" ;;
-  *) echo "uso: correo.sh [estado|flota|entregas|permisos|inventario|precheck|zona|paridad|entrante|destinos|saliente|dmarc|test|probar-envio] <dominio> …" >&2; exit 1 ;;
+  *) echo "uso: correo.sh [estado|flota|entregas|permisos|inventario|precheck|zona|paridad|apuntar|entrante|destinos|saliente|dmarc|test|probar-envio] <dominio> …" >&2; exit 1 ;;
 esac

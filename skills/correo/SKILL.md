@@ -29,6 +29,7 @@ bash $C precheck <dominio>                   # ANTES de tocar nada: DNSSEC, NS, 
 bash $C inventario <dominio>                 # todos los registros, con el tipo explícito
 bash $C zona <dominio>                       # crea la zona en Cloudflare (NO cambia los NS)
 bash $C paridad <dominio>                    # ¿sirve lo mismo que el registrador? antes de migrar
+bash $C apuntar <dominio> <ip>               # apex + www a esa IP, en gris (rellena una zona vacía)
 bash $C ns <dominio> [--a-cloudflare]        # los NS en el registrador; los cambia si paridad va verde
 bash $C entrante <dominio> <destino>         # Email Routing + catch-all
 bash $C destinos <dominio>                   # quién recibe y si está VERIFICADO ← el fallo nº1
@@ -141,7 +142,15 @@ dig +noall +authority NS <dominio> @a.gtld-servers.net
 
 `ns` vuelve a correr `paridad` por su cuenta y **se niega si no está en verde**: es el único
 paso que puede tirar la web y todo lo que cuelgue del dominio, así que el freno va dentro del
-comando, no en la cabeza de quien lo escribe. Hoy habla con **GoDaddy** (PAT en
+comando, no en la cabeza de quien lo escribe.
+
+**Caso "el dominio apunta a un sitio muerto"** (un despliegue que ya se apagó, un hosting que se
+dejó de pagar): ahí copiar los registros viejos para que `paridad` salga verde y borrarlos dos
+minutos después es teatro. `apuntar <dominio> <ip>` deja apex y `www` en el destino nuevo, y
+`ns --a-cloudflare --forzar` cambia la delegación con la paridad en rojo. **Antes de forzar, curl
+al destino viejo**: si responde algo que no sea un error, no fuerces — copia los registros y migra
+en dos pasos. Que el TXT de verificación del sitio muerto se pierda es justo lo que quieres; que
+se pierda el de Search Console, no. Hoy habla con **GoDaddy** (PAT en
 `~/.config/godaddy-pat.token`, se saca en `developer.godaddy.com/personal-access-token`); otro
 registrador es una función más ahí.
 
