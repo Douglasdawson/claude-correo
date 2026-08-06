@@ -52,9 +52,25 @@ rs_post() { curl -s -m 25 -X POST -H "Authorization: Bearer $RS_TOKEN" -H "Conte
 
 # dig_ TIPO nombre [servidor] — el tipo NUNCA es opcional (ver cabecera)
 dig_() {
-  local tipo="$1" nombre="$2" ns="${3:-}"
-  if [ -n "$ns" ]; then dig +short "$tipo" "$nombre" "@$ns" 2>/dev/null
-  else dig +short "$tipo" "$nombre" 2>/dev/null; fi
+  local tipo="$1" nombre="$2" ns="${3:-}" r
+  _dig1() { if [ -n "$ns" ]; then dig +short +time=3 +tries=1 "$tipo" "$nombre" "@$ns" 2>/dev/null
+            else dig +short +time=3 +tries=1 "$tipo" "$nombre" 2>/dev/null; fi; }
+  # Un dig VACIO no prueba que el registro no exista: un timeout devuelve
+  # exactamente lo mismo, y aqui "vacio" se traduce en veredictos del tipo
+  # "sin MX, no recibe correo" sobre un dominio perfectamente montado (paso
+  # 3 veces el 6-ago-2026). Midiendo desde esa maquina se perdia ~30% de las
+  # respuestas, por UDP y por TCP: no era el dominio, era la red.
+  # Se reintenta contra el MISMO servidor a proposito — 'paridad' compara con
+  # un autoritativo concreto y saltar a otro resolver mentiria.
+  # ponytail: 4 intentos ciegos; con 30% de perdida deja ~1% de falso negativo.
+  # Si hiciera falta mas fino, mirar el 'status:' de la respuesta completa
+  # (NOERROR sin answers = no existe DE VERDAD; sin status = no hubo respuesta).
+  local i
+  for i in 1 2 3 4; do
+    r=$(_dig1); [ -n "$r" ] && break
+  done
+  [ -n "$r" ] && printf '%s\n' "$r"
+  return 0
 }
 
 titulo() { printf '\n── %s ──\n' "$1"; }
