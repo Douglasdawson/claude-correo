@@ -165,6 +165,18 @@ probar_permiso() {
   if cf_ok "$(cf_get "$2")" 2>/dev/null; then ok "$1"; return 0; else mal "$1"; return 1; fi
 }
 
+# puede_crear_zonas <account_id> — el unico permiso sin GET que lo delate, y el
+# que revienta 'zona' con un error que no menciona ningun token. Se sondea con un
+# POST de nombre INVALIDO (una sola etiqueta, sin TLD): Cloudflare no puede
+# crearlo ni queriendo, asi que la sonda no ensucia la cuenta. Si el permiso
+# falta el error habla de zone.create; si esta, habla del nombre.
+# (6-ago-2026: 'permisos' salia todo verde salvo Email Routing y 'zona' moria
+#  igual con "Requires permission com.cloudflare.api.account.zone.create")
+puede_crear_zonas() {
+  local r; r=$(cf_post "/zones" "{\"name\":\"correo-sh-sonda-invalida\",\"account\":{\"id\":\"$1\"}}")
+  case "$r" in *zone.create*) return 1 ;; *) return 0 ;; esac
+}
+
 # ---------------------------------------------------------------------------
 # inventario — todos los registros, con el tipo SIEMPRE explicito
 # ---------------------------------------------------------------------------
@@ -400,13 +412,28 @@ cmd_permisos() {
   if [ -z "$a" ]; then
     mal "no puedo resolver el account id: sin esto no se puede comprobar mas"; return 1
   fi
+  if puede_crear_zonas "$a"; then ok "Account → Zone → Edit        (crear zonas)"
+  else mal "Account → Zone → Edit        (crear zonas)"; fi
   probar_permiso "Account → Email Routing Addresses (destinos)" "/accounts/$a/email/routing/addresses?per_page=1"
-  if [ -n "$d" ]; then
-    local z; z=$(zid "$d") || return 1
-    probar_permiso "Zone → DNS                  (registros de $d)" "/zones/$z/dns_records?per_page=1"
-    probar_permiso "Zone → Email Routing        (reglas de $d)" "/zones/$z/email/routing/rules?per_page=1"
+  # Los permisos de zona se comprueban sobre CUALQUIER zona de la cuenta: el caso
+  # normal es preguntar por un dominio que aun no esta en Cloudflare (justo antes
+  # de montarlo), y antes 'zid' abortaba ahi dejando media lista sin comprobar.
+  local z zd="$d"
+  if [ -n "$d" ]; then z=$(zid "$d" 2>/dev/null) || true; fi
+  if [ -z "${z:-}" ]; then
+    z=$(cf_get "/zones?per_page=1" | python3 -c '
+import json, sys
+try: r = json.load(sys.stdin).get("result") or []
+except Exception: r = []
+print("%s %s" % (r[0]["id"], r[0]["name"]) if r else "")')
+    zd="${z#* }"; z="${z%% *}"
+    [ -n "$z" ] && [ -n "$d" ] && info "$d no esta en Cloudflare todavia: pruebo la zona sobre $zd"
+  fi
+  if [ -n "${z:-}" ]; then
+    probar_permiso "Zone → DNS                  (registros de $zd)" "/zones/$z/dns_records?per_page=1"
+    probar_permiso "Zone → Email Routing        (reglas de $zd)" "/zones/$z/email/routing/rules?per_page=1"
   else
-    info "pasa un dominio para comprobar tambien los permisos de zona"
+    info "la cuenta no tiene ninguna zona: no puedo comprobar los permisos de zona"
   fi
   echo
   info "lo rojo se anyade al MISMO token en dash.cloudflare.com/profile/api-tokens"

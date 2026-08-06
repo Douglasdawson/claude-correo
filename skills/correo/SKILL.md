@@ -83,6 +83,15 @@ Se guarda en `~/.config/cloudflare-api.token`.
 - **Lo primero de todo: `correo.sh permisos <dominio>`.** Dice cuál de los cuatro falta en vez de
   dejarte un `10000 Authentication error` a mitad de un `entrante`. El 1-ago-2026 el token en uso
   llevaba meses sin `Email Routing` (ni el de cuenta ni el de zona) y nadie se había enterado.
+- ⚠️ **Los cuatro se comprueban siempre, también en un dominio que aún no está en Cloudflare** —
+  que es el caso normal, porque se pregunta *antes* de montarlo. El 6-ago-2026 `permisos` abortaba
+  ahí (`el dominio no esta en esta cuenta`) dejando media lista sin mirar, y `Account → Zone → Edit`
+  no se comprobaba en absoluto: el token salía "solo le falta Email Routing", `zona` moría con
+  `Requires permission "com.cloudflare.api.account.zone.create"` y había que volver a molestar al
+  humano por un segundo permiso. Ahora los de zona se prueban contra cualquier zona de la cuenta y
+  el de crear zonas con un `POST /zones` de nombre inválido (no ensucia nada). **Un permiso que no
+  se puede comprobar de un GET no es excusa para no comprobarlo: se sondea con una escritura que no
+  puede prosperar.**
 - ⚠️ **La plantilla "Edit zone DNS" NO basta**: no puede crear zonas
   (`com.cloudflare.api.account.zone.create`) ni tocar Email Routing (devuelve un `Authentication
   error` que parece de sesión y es de permisos).
