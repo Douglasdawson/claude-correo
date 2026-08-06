@@ -102,9 +102,25 @@ print(r[0]["id"] if r else "")')
   printf '%s' "$ZID_CACHE"
 }
 
-# ns_autoritativos <dominio> — los NS segun los gTLD, que es la unica verdad
+# ns_reales <dominio> — los NS segun el registro del TLD, que es la unica verdad
+# (el panel del registrador miente, y un resolver puede llevar la delegacion
+#  vieja cacheada hasta 48h).
+#
+# ⚠ El servidor de TLD se busca, no se asume. Antes estaba fijo a
+# a.gtld-servers.net, que solo sirve gTLDs: con un .es respondia una REFERENCIA
+# A LOS ROOT y la funcion devolvia "j.root-servers.net…" como si fueran los NS
+# del dominio. Efecto: 'paridad' comparaba contra un root server, que no
+# contesta de nada, y daba TODO como que difiere — frenando migraciones sanas
+# de cualquier ccTLD (6-ago-2026).
 ns_reales() {
-  dig +noall +authority NS "$1" @a.gtld-servers.net 2>/dev/null | awk '{print $NF}' | sed 's/\.$//' | sort
+  local d="$1" tld="${1##*.}" srv ans
+  srv=$(dig +noall +authority NS "$tld." @a.root-servers.net 2>/dev/null | awk '$4=="NS"{print $5}' | head -1)
+  [ -n "$srv" ] || srv=a.gtld-servers.net
+  ans=$(dig +noall +authority NS "$d" @"$srv" 2>/dev/null | awk '$4=="NS"{print $5}' | sed 's/\.$//' | sort)
+  # si lo que vuelve son los root, es que ese servidor no manda en este TLD
+  case "$ans" in *root-servers.net*) return 0 ;; esac
+  printf '%s\n' "$ans" | grep -v '^$'
+  return 0
 }
 
 # acc_id — id de cuenta. Sale de una zona porque GET /accounts viene VACIO con
