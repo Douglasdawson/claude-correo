@@ -275,10 +275,24 @@ informes salgan limpios, no antes.
 
 ## Fase 5 — verificar
 
+**Verifica en la capa donde vive el resultado, no en la última que controlas.** Esto atraviesa
+cuatro o cinco sistemas y cada uno da una señal verde que **no prueba nada del siguiente**:
+
+| Señal | Lo que realmente dice | Compatible con… |
+|---|---|---|
+| El DNS tiene MX | alguien acepta correo para el dominio | que el destino no exista |
+| `test` da 250 | el MX acepta el sobre | que la ruta lo descarte después |
+| Resend: `delivered` | **el MX de destino aceptó** | que un reenviador lo tire luego |
+| El log de tu app: `sent` | la API de envío devolvió 200 | absolutamente todo lo demás |
+
+Las cuatro pueden estar en verde con el mensaje en la basura. **Lo único que prueba que el correo
+llega es abrir el buzón.** El 6-ago-2026 se dio un flujo por bueno leyendo `notification sent` en
+un log mientras Cloudflare descartaba cada mensaje: se perdieron solicitudes de clientes.
+
 ```bash
 bash $C destinos <dominio>                          # ¿el destino está VERIFICADO? ← primero
 bash $C test <dominio>                              # SMTP hasta RCPT TO, corta antes del DATA
-bash $C probar-envio <dominio> <token> <destino>    # envío real → last_event=delivered
+bash $C probar-envio <dominio> <token> <destino>    # envío real
 ```
 
 `test` prueba además una dirección inventada: si las dos dan 250, hay catch-all. Pero un 250 solo

@@ -21,6 +21,14 @@
 #   · GET /accounts devuelve VACIO con el token de esta skill (los 5 permisos no
 #     incluyen Account Settings→Read). Por eso el account id sale de una zona,
 #     no de /accounts: asi zona no abortaba en el primer dominio (1-ago-2026)
+#   · VERIFICA EN LA CAPA DONDE VIVE EL RESULTADO, NO EN LA ULTIMA QUE CONTROLAS.
+#     Todo lo de aqui atraviesa 4 o 5 sistemas, y cada uno da una senyal verde que
+#     NO prueba nada del siguiente: Resend dice "delivered" (= el MX acepto el
+#     sobre), el log de la app dice "sent", test da 250, el DNS tiene MX. Las
+#     cuatro son ciertas y compatibles con que el mensaje se haya tirado. Lo unico
+#     que prueba que el correo llega es ABRIR EL BUZON. El 6-ago-2026 se dio por
+#     bueno un flujo leyendo "notification sent" en un log mientras Cloudflare
+#     descartaba cada mensaje: se perdieron solicitudes de clientes
 #   · "ACEPTADO" NO ES "HECHO". Casi nada aqui es sincrono: el registrador acepta
 #     el cambio de NS (status:CONFIRMED) y lo rechaza segundos despues en la
 #     operacion; Resend acepta el alta y verifica luego; Cloudflare acepta el
@@ -832,7 +840,17 @@ cmd_probar_envio() {
 
   sleep 12
   local ev; ev=$(rs_get "/emails/$id" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("last_event",""))')
-  [ "$ev" = "delivered" ] && ok "ENTREGADO" || info "estado: $ev (puede tardar unos segundos mas)"
+  # 'delivered' NO significa que nadie lo haya recibido: significa que el MX de
+  # destino acepto el sobre. Si ese MX es un reenviador (Cloudflare), lo que pase
+  # despues no aparece aqui — y puede ser que lo tire. Decir "ENTREGADO" con esto
+  # es la mentira que costo perder solicitudes de clientes (6-ago-2026).
+  case "$ev" in
+    delivered) ok "el MX de $dest acepto el mensaje"
+               info "eso NO prueba que este en la bandeja: si el destino reenvia,"
+               info "lo que pasa despues no se ve desde aqui. ABRE EL BUZON." ;;
+    bounced|complained) mal "estado: $ev — no ha llegado" ;;
+    *)         info "estado: $ev (puede tardar unos segundos mas)" ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
@@ -875,6 +893,20 @@ cmd_estado() {
 
   local dkim; dkim=$(dig_ TXT "resend._domainkey.$d" "$(ns_auth "$d")")
   [ -n "$dkim" ] && ok "saliente: Resend (DKIM presente)" || mal "saliente: sin DKIM de Resend"
+
+  # La combinacion que se traga las solicitudes de clientes: el dominio REENVIA
+  # (MX de Cloudflare) y ademas ENVIA desde si mismo (DKIM). Si la app manda sus
+  # avisos internos a una direccion de este mismo dominio, van de info@ a info@ y
+  # el anti-bucle de Cloudflare los descarta sin dejar rastro. Se detecta desde el
+  # DNS, asi que se avisa aunque nadie lo pregunte.
+  if echo "$mx" | grep -q 'mx\.cloudflare\.net' && [ -n "$dkim" ]; then
+    echo
+    mal "OJO: este dominio reenvia Y envia desde si mismo"
+    info "el correo cuyo remitente es @$d y va dirigido a @$d lo DESCARTA Cloudflare"
+    info "(anti-bucle, en silencio). Si la app se auto-avisa a una direccion de"
+    info "este dominio, pierde esos mensajes sin ningun error."
+    info "→ el buzon de los avisos internos va FUERA de $d"
+  fi
 
   local spf dmarc
   spf=$(dig_ TXT "$d" "$(ns_auth "$d")" | grep -i 'v=spf1')
