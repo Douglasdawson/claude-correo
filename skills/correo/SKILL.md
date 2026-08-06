@@ -76,9 +76,13 @@ En [API tokens](https://dash.cloudflare.com/profile/api-tokens) → *Create Cust
 ```
 Zone    │ Zone                     │ Edit    ← crear zonas (NO es "Account → Zone")
 Zone    │ DNS                      │ Edit
-Zone    │ Email Routing            │ Edit    ← reglas y catch-all
+Zone    │ Email Routing Rules      │ Edit    ← reglas y catch-all ("Rules" en el panel)
 Account │ Email Routing Addresses  │ Edit    ← destinos (el ÚNICO de cuenta)
 ```
+
+Los dos de Email Routing **se llaman distinto en el panel que en los mensajes de error**: bajo
+*Zone* el desplegable solo ofrece `Email Routing Rules`, y bajo *Account* solo
+`Email Routing Addresses`. Buscar "Email Routing" a secas no encuentra ninguno de los dos.
 
 ⚠️ **Crear zonas es `Zone → Zone → Edit`, aunque el error diga `com.cloudflare.api.account.zone.create`.**
 El scope lleva "account" en el nombre y el permiso está bajo **Zone**; buscar "zone" en el
