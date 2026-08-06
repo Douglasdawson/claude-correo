@@ -330,8 +330,21 @@ dice que Cloudflare acepta el sobre — quien decide si llega es el estado del d
 Ajustes → Cuentas → *Añadir otra dirección*. `smtp.resend.com`, puerto `587`, usuario literal
 **`resend`**, contraseña la API key, TLS.
 
-- ⚠️ **Gmail autorrellena mal el SMTP**: pone el MX de entrada (`route1.mx.cloudflare.net`) como
-  servidor y el usuario local. Corregir ambos o dará un error de autenticación indescifrable.
+- ⚠️ **Gmail autorrellena mal DOS campos, y cada uno da un error distinto que despista:**
+  - **Servidor** → pone el MX de *entrada* (`route1.mx.cloudflare.net`). Síntoma:
+    *"Couldn't connect to the server"*.
+  - **Usuario** → pone tu email (`ivan@dominio.com`). Es `resend`, la palabra literal, siempre,
+    para cualquier cuenta: a ti te identifica la contraseña, no el usuario. Síntoma:
+    *"Authentication error. Check your username and password"*.
+
+  Leer el error importa: **"couldn't connect" es servidor/puerto; "authentication error" es
+  usuario/contraseña**. Si pasas de uno al otro, vas bien.
+- ⚠️ **El puerto manda sobre el cifrado y tienen que casar**: `465` con **SSL**, `587` con **TLS**.
+  Cruzarlos da *"Couldn't connect"* aunque servidor y credenciales sean correctos.
+- 🔴 **Al pasar la API key por el portapapeles, `printf` o `.trim()`, NUNCA `grep`**: grep añade un
+  `\n` al final, Gmail lo manda dentro de la contraseña y Resend rechaza la autenticación. Se ve
+  contando: una key de Resend son **36 caracteres**; si `pbpaste | wc -c` dice 37, sobra el salto
+  (6-ago-2026, media hora perdida en un error que parecía de configuración).
 - **Desmarcar "Tratar como alias"**, o las respuestas vuelven al Gmail personal.
 - ⚠️ Gmail viene en **"Always reply from default address"**: cambiarlo a *responder desde la
   dirección a la que se envió* o cada respuesta a un cliente sale del Gmail personal.
