@@ -123,6 +123,28 @@ ns_reales() {
   return 0
 }
 
+# ns_auth <dominio> — UN nameserver autoritativo, para preguntarle A EL en vez de
+# a un resolver publico.
+#
+# ⚠ Por que 1.1.1.1 (ni ningun resolver) no sirve para decidir si algo existe:
+# es anycast con cientos de nodos y cada uno tiene su cache. Recien creado un
+# registro, unos nodos lo sirven y otros siguen con el RRset viejo durante toda
+# la TTL, asi que la MISMA consulta repetida da SI / NO / SI. Con eso 'estado'
+# soltaba "sin MX, no recibe correo" sobre un dominio que estaba entregando
+# correo de verdad (6-ago-2026, comprobado con un mensaje real recibido).
+# El autoritativo no tiene cache: es el unico sitio donde "¿existe?" tiene
+# respuesta. Un resolver publico sigue valiendo para "¿ya ha propagado?", que
+# es otra pregunta — no la mezcles.
+NS_AUTH_CACHE=""
+NS_AUTH_DOM=""
+ns_auth() {
+  [ "$NS_AUTH_DOM" = "$1" ] && { printf '%s' "$NS_AUTH_CACHE"; return 0; }
+  NS_AUTH_DOM="$1"
+  NS_AUTH_CACHE=$(ns_reales "$1" | head -1)
+  [ -n "$NS_AUTH_CACHE" ] || NS_AUTH_CACHE="1.1.1.1"   # sin delegacion legible, lo que haya
+  printf '%s' "$NS_AUTH_CACHE"
+}
+
 # acc_id — id de cuenta. Sale de una zona porque GET /accounts viene VACIO con
 # este token (ver cabecera). El fallback a /accounts es para la cuenta recien
 # creada que aun no tiene ninguna zona.
@@ -491,7 +513,7 @@ cmd_entrante() {
   # Va ANTES de resolver el zone id A PROPOSITO: si el dominio no esta en esta
   # cuenta, el error de zona tapaba el aviso de "aqui ya hay correo de alguien",
   # que es el que de verdad importa (29-jul-2026, cazado al probar la guarda).
-  local mx; mx=$(dig_ MX "$d" 1.1.1.1)
+  local mx; mx=$(dig_ MX "$d" "$(ns_auth "$d")")
   if [ -n "$mx" ] && ! echo "$mx" | grep -q 'mx\.cloudflare\.net'; then
     mal "$d YA RECIBE CORREO en otro proveedor:"; echo "$mx" | sed 's/^/      /'
     if [ "$forzar" != "--forzar" ]; then
@@ -723,7 +745,7 @@ print(r[0]["id"] if r else "")')
 cmd_test() {
   local d="${1:-}"; [ -n "$d" ] || { echo "uso: correo.sh test <dominio> [direccion]" >&2; return 1; }
   local dir="${2:-info@$d}"
-  local mx; mx=$(dig_ MX "$d" 1.1.1.1 | sort -n | head -1 | awk '{print $2}' | sed 's/\.$//')
+  local mx; mx=$(dig_ MX "$d" "$(ns_auth "$d")" | sort -n | head -1 | awk '{print $2}' | sed 's/\.$//')
   [ -n "$mx" ] || { mal "$d no tiene MX: no recibe correo"; return 1; }
 
   titulo "handshake contra $mx (sin enviar nada)"
@@ -767,7 +789,7 @@ cmd_estado() {
   info "nameservers: $ns"
   echo "$ns" | grep -q cloudflare && ok "DNS en Cloudflare" || info "DNS fuera de Cloudflare"
 
-  local mx; mx=$(dig_ MX "$d" 1.1.1.1)
+  local mx; mx=$(dig_ MX "$d" "$(ns_auth "$d")")
   if echo "$mx" | grep -q 'mx\.cloudflare\.net'; then
     ok "entrante: Cloudflare Email Routing"
     # el destino es lo unico que el DNS no puede contar, y con buzon ajeno es
@@ -794,12 +816,12 @@ cmd_estado() {
   elif [ -n "$mx" ]; then info "entrante: otro proveedor — $(echo "$mx" | tr '\n' ' ')"
   else mal "entrante: sin MX, no recibe correo"; fi
 
-  local dkim; dkim=$(dig_ TXT "resend._domainkey.$d" 1.1.1.1)
+  local dkim; dkim=$(dig_ TXT "resend._domainkey.$d" "$(ns_auth "$d")")
   [ -n "$dkim" ] && ok "saliente: Resend (DKIM presente)" || mal "saliente: sin DKIM de Resend"
 
   local spf dmarc
-  spf=$(dig_ TXT "$d" 1.1.1.1 | grep -i 'v=spf1')
-  dmarc=$(dig_ TXT "_dmarc.$d" 1.1.1.1)
+  spf=$(dig_ TXT "$d" "$(ns_auth "$d")" | grep -i 'v=spf1')
+  dmarc=$(dig_ TXT "_dmarc.$d" "$(ns_auth "$d")")
   [ -n "$spf" ]   && info "SPF:   $spf"   || mal "SPF: ninguno"
   [ -n "$dmarc" ] && info "DMARC: $dmarc" || mal "DMARC: ninguno"
 
@@ -854,13 +876,13 @@ EOF
 
     # ASCII en la tabla a proposito: printf %-14s cuenta BYTES, y un guion largo
     # son 3 — la columna se descuadra justo en las filas que hay que mirar
-    mx=$(dig_ MX "$d" 1.1.1.1)
+    mx=$(dig_ MX "$d" "$(ns_auth "$d")")
     if   echo "$mx" | grep -q 'mx\.cloudflare\.net'; then ent="Cloudflare"
     elif [ -n "$mx" ];                               then ent="otro proveedor"
     else ent="NO RECIBE"; sin_ent=$((sin_ent+1))
          [ "$dns" = "Cloudflare" ] && pendientes+=("$d"); fi
 
-    dkim=$(dig_ TXT "resend._domainkey.$d" 1.1.1.1)
+    dkim=$(dig_ TXT "resend._domainkey.$d" "$(ns_auth "$d")")
     if [ -n "$dkim" ]; then sal="Resend"; else sal="no"; sin_sal=$((sin_sal+1)); fi
 
     printf '  %-34s %-11s %-14s %s\n' "$d" "$dns" "$ent" "$sal"
