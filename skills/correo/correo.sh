@@ -303,21 +303,56 @@ cmd_paridad() {
     info "la delegacion ya esta en Cloudflare: no hay con quien comparar"; return 0
   fi
 
-  titulo "Cloudflare vs $viejo"
-  local difs=0 t r_cf r_old
-  for t in A AAAA MX TXT CAA; do
-    r_old=$(dig_ "$t" "$d" "$viejo" | sort)
-    r_cf=$(dig_ "$t" "$d" "$(cf_get "/zones/$z" | python3 -c '
+  local cfns; cfns=$(cf_get "/zones/$z" | python3 -c '
 import json,sys
 try: print((json.load(sys.stdin)["result"].get("name_servers") or [""])[0])
-except Exception: print("")')" | sort)
+except Exception: print("")')
+  [ -n "$cfns" ] || { mal "la zona no tiene nameservers asignados todavia"; return 1; }
+
+  # Que se compara y por que. La direccion PELIGROSA es "el registrador tiene un
+  # registro que Cloudflare no", porque ahi el cambio de NS lo hace desaparecer.
+  # Y la zona del registrador no se puede enumerar (AXFR cerrado), asi que:
+  #   1) todo lo que Cloudflare sirve  → se comprueba contra el registrador
+  #   2) una lista de sondas           → caza lo que falte en Cloudflare
+  # Entre las sondas van etiquetas al azar: son las que delatan un COMODIN
+  # perdido, que es justo lo que el escaneo de importacion de Cloudflare no trae
+  # y lo unico capaz de tirar 20 webs de golpe (6-ago-2026: la importacion de un
+  # dominio con *.apps trajo CERO registros y el paridad viejo daba verde igual,
+  # porque solo mirab el apex).
+  local pares tmp; tmp=$(mktemp)
+  cf_get "/zones/$z/dns_records?per_page=500" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+for r in d.get("result") or []:
+    print("%s %s" % (r["type"], r["name"]))' | sort -u > "$tmp"
+
+  local etq="www mail api app apps blog shop tienda cdn static assets dev staging admin panel portal docs status m send"
+  local l az="sonda-$$"
+  { echo "A $az.$d"; echo "MX $d"; echo "TXT $d"; echo "CAA $d"; echo "AAAA $d"
+    for l in $etq; do
+      echo "A $l.$d"; echo "CNAME $l.$d"; echo "A $az.$l.$d"
+    done
+  } >> "$tmp"
+  pares=$(sort -u "$tmp"); rm -f "$tmp"
+
+  titulo "Cloudflare vs $viejo — $(echo "$pares" | wc -l | tr -d ' ') nombres"
+  local difs=0 iguales=0 t n r_cf r_old
+  while read -r t n; do
+    [ -n "$t" ] || continue
+    r_old=$(dig_ "$t" "$n" "$viejo" | sort | tr '\n' ' ')
+    r_cf=$(dig_  "$t" "$n" "$cfns"  | sort | tr '\n' ' ')
+    [ -z "$r_old$r_cf" ] && continue          # no existe en ninguno: ni se menciona
     if [ "$r_old" = "$r_cf" ]; then
-      [ -n "$r_old" ] && ok "$t coincide"
+      iguales=$((iguales+1)); ok "$t $n"
     else
-      mal "$t DIFIERE"; echo "      registrador: $(echo "$r_old" | tr '\n' ' ')"
-      echo "      cloudflare : $(echo "$r_cf" | tr '\n' ' ')"; difs=$((difs+1))
+      difs=$((difs+1)); mal "$t $n DIFIERE"
+      echo "      registrador: ${r_old:-(vacio)}"
+      echo "      cloudflare : ${r_cf:-(VACIO — este se pierde al cambiar los NS)}"
     fi
-  done
+  done <<EOF
+$pares
+EOF
+  info "$iguales coinciden · $difs difieren"
 
   titulo "proxy (debe estar TODO en gris)"
   cf_get "/zones/$z/dns_records?per_page=100" | python3 -c '
