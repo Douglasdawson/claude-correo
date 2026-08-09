@@ -325,6 +325,15 @@ bash $C probar-envio <dominio> <token> <destino>    # envío real
 `test` prueba además una dirección inventada: si las dos dan 250, hay catch-all. Pero un 250 solo
 dice que Cloudflare acepta el sobre — quien decide si llega es el estado del destino.
 
+- 🔴 **No pruebes el reenvío enviando desde el propio buzón de destino: Gmail deduplica y no lo
+  enseña.** 9-ago-2026: prueba enviada desde el Gmail de destino a `info@` de un dominio cuyo
+  catch-all va a esa misma cuenta. Cloudflare lo registró `delivered / forward` y en Recibidos no
+  había nada. **El
+  propio Cloudflare manda un aviso** *"Missing email from X to Y?"* explicándolo y recomendando
+  probar desde otra dirección — si ves ese asunto en la bandeja, el montaje está bien y la prueba
+  es la que está mal. Ojo: esto **no** resucita la teoría refutada de "Cloudflare descarta el
+  correo del propio dominio" (ver la nota de la Fase 3); es deduplicación del cliente, ocurre
+  antes de que nadie filtre nada. **Prueba siempre desde una cuenta distinta del destino.**
 - ⚠️ **Un fallo de red se disfraza de veredicto.** El 9-ago-2026 `destinos` dijo *"El dominio no
   está en esta cuenta de Cloudflare"* sobre una zona recién creada, activa y con el catch-all ya
   montado: un corte de 20 s dejó el `curl` vacío y `zid()` leyó "lista vacía" como "no existe".
