@@ -108,15 +108,28 @@ sys.exit(1)'
 }
 
 # zid <dominio> — zone id, cacheado por proceso
+#
+# ⚠ Un curl que no llega NO es "el dominio no esta en la cuenta". El 9-ago-2026 un
+# corte de red de 20s hizo que 'destinos' dijera "El dominio no esta en esta cuenta"
+# sobre una zona recien creada y funcionando: se pierde el rato buscando un problema
+# de permisos o de propagacion que no existe. Se distingue mirando el sobre de la
+# API ("success"), no si la lista viene vacia: sin respuesta no hay veredicto.
 ZID_CACHE=""
 zid() {
   [ -n "$ZID_CACHE" ] && { printf '%s' "$ZID_CACHE"; return 0; }
-  ZID_CACHE=$(cf_get "/zones?name=$1" | python3 -c '
+  local resp; resp=$(cf_get "/zones?name=$1")
+  local veredicto; veredicto=$(printf '%s' "$resp" | python3 -c '
 import json, sys
-try: r = json.load(sys.stdin).get("result") or []
-except Exception: r = []
-print(r[0]["id"] if r else "")')
-  [ -n "$ZID_CACHE" ] || { echo "El dominio $1 no esta en esta cuenta de Cloudflare" >&2; return 1; }
+try: d = json.load(sys.stdin)
+except Exception: print("SINRESPUESTA"); sys.exit()
+if not d.get("success"): print("SINRESPUESTA"); sys.exit()
+r = d.get("result") or []
+print(r[0]["id"] if r else "NOESTA")')
+  case "$veredicto" in
+    SINRESPUESTA) echo "no pude consultar Cloudflare por $1 (red o token) — reintenta antes de concluir nada" >&2; return 1 ;;
+    NOESTA)       echo "El dominio $1 no esta en esta cuenta de Cloudflare" >&2; return 1 ;;
+  esac
+  ZID_CACHE="$veredicto"
   printf '%s' "$ZID_CACHE"
 }
 

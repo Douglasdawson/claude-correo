@@ -325,6 +325,15 @@ bash $C probar-envio <dominio> <token> <destino>    # envío real
 `test` prueba además una dirección inventada: si las dos dan 250, hay catch-all. Pero un 250 solo
 dice que Cloudflare acepta el sobre — quien decide si llega es el estado del destino.
 
+- ⚠️ **Un fallo de red se disfraza de veredicto.** El 9-ago-2026 `destinos` dijo *"El dominio no
+  está en esta cuenta de Cloudflare"* sobre una zona recién creada, activa y con el catch-all ya
+  montado: un corte de 20 s dejó el `curl` vacío y `zid()` leyó "lista vacía" como "no existe".
+  Se va el rato buscando un problema de permisos o de propagación que no está. `zid` ya
+  distingue los tres casos mirando el `success` del sobre de la API — **si añades otra
+  comprobación, no concluyas nada de una respuesta vacía: sin respuesta no hay veredicto.**
+  Regla práctica ante cualquier rojo raro de esta skill: **repítelo una vez antes de
+  diagnosticarlo.**
+
 ## Fase 6 — responder como info@ desde Gmail (manual)
 
 Ajustes → Cuentas → *Añadir otra dirección*. `smtp.resend.com`, puerto `587`, usuario literal
