@@ -364,6 +364,16 @@ Ajustes → Cuentas → *Añadir otra dirección*. `smtp.resend.com`, puerto `58
   contando: una key de Resend son **36 caracteres**; si `pbpaste | wc -c` dice 37, sobra el salto
   (6-ago-2026, media hora perdida en un error que parecía de configuración).
 - **Desmarcar "Tratar como alias"**, o las respuestas vuelven al Gmail personal.
+- 🔴 **Viene MARCADA por defecto y es facilísimo guardar sin tocarla**: vive en el paso 1 del
+  asistente y la contraseña en el paso 2, así que al avanzar parece que ya está todo hecho. Pasó
+  dos veces seguidas el 9-ago-2026, la segunda avisando expresamente al humano. Y **arreglarlo
+  después cuesta más que hacerlo bien**: al editar, Gmail vuelve a pedir la API key para guardar.
+- **Cómo se comprueba (y la forma fiable de arreglarlo):** en la lista de *Send mail as*, cada
+  dirección correcta muestra el literal **"Not an alias."**; si falta, está mal. Entrando por
+  *edit info* se cae en el paso 3, donde el flag viaja como **`input[name=cfia]` oculto con valor
+  `"true"`**: ponerlo a `""` con el setter nativo lo apaga sin depender de que nadie acierte con
+  la casilla. Verificar SIEMPRE releyendo la lista, no el diálogo: al guardar se queda en blanco
+  y no confirma nada.
 - ⚠️ Gmail viene en **"Always reply from default address"**: cambiarlo a *responder desde la
   dirección a la que se envió* o cada respuesta a un cliente sale del Gmail personal.
 - El correo de confirmación **no lleva código, lleva un enlace** — y como no tiene query string,
