@@ -377,6 +377,20 @@ pulsar el botón que los abre:
 window.open = u => { location.href = u }   // el formulario se queda en la pestaña
 ```
 
+- ⚠️ **Aun con el truco, el clic en *edit info* / *Add another email address* deja el `eval`
+  colgado 45 s** (9-ago-2026, tres veces seguidas). **El timeout NO significa que no haya pasado
+  nada**: a veces la navegación sí ocurrió y estás ya en el formulario. Antes de reintentar,
+  pregunta solo `document.title` — si dice *"Add another email address"* o *"Edit email address"*,
+  sigue desde ahí en vez de volver a pulsar.
+- 🔴 **No navegues el formulario tocando sus parámetros de URL (`cfrp`, `cfa`) para saltar de
+  paso.** Parece un atajo y **vacía los campos ocultos**: `cfn` (el nombre visible) se quedó en
+  blanco, y un *Save Changes* ahí lo borra. Si te has perdido dentro del wizard, sal a
+  `#settings/accounts` y entra otra vez por la UI.
+- ⚠️ **Al buscar el enlace *edit info* de una dirección, filtra las filas que NO contengan otras
+  filas dentro** (`r.querySelectorAll('tr').length===0`). Un `tr` de Gmail envuelve toda la tabla:
+  buscar "el tr que contiene sales@" devuelve el contenedor y acabas editando **la dirección por
+  defecto** sin enterarte.
+
 Y en Cloudflare: *Create routing rule* y *Add new address* son `<a>`, no `<button>` (filtrar solo
 por `button` no los encuentra); *Add address* de la vista de **zona** está muerto — el bueno es el
 de **cuenta**, y se activa al escribir en el `input[name=email]` que tiene al lado.
