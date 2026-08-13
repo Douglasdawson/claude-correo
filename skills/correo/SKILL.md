@@ -374,6 +374,19 @@ Ajustes → Cuentas → *Añadir otra dirección*. `smtp.resend.com`, puerto `58
   `"true"`**: ponerlo a `""` con el setter nativo lo apaga sin depender de que nadie acierte con
   la casilla. Verificar SIEMPRE releyendo la lista, no el diálogo: al guardar se queda en blanco
   y no confirma nada.
+- 🔴 **Pero ese arreglo por `cfia` NO lo puede aplicar el agente: la página de edición está
+  bloqueada** (13-ago-2026). Al pulsar *edit info*, Gmail navega a `…view=cf&cfa=<dirección>`, y
+  ahí el clasificador de permisos devuelve `[BLOCKED: Cookie/query string data]` a cualquier
+  `javascript_tool`, incluso de solo lectura; `screenshot` encima da *script injection timed out*
+  dos veces seguidas. O sea: la receta del `input[name=cfia]` sirve para que la aplique un humano,
+  no para automatizarla. **Traducción práctica: desmarcar la casilla en el alta no es "mejor", es
+  la ÚNICA vez que se puede hacer sin ojos humanos.** Si ya está mal, deja la pestaña abierta en
+  el asistente, copia la API key al portapapeles y que lo remate la persona.
+- ⚠️ **Audita también las direcciones que ya estaban, no solo la que acabas de dar de alta.** El
+  13-ago-2026, en una cuenta con seis direcciones, **dos** no tenían "Not an alias." — las dos
+  añadidas más recientemente, meses después de que el resto se configurara bien. El flag no
+  avisa de nada y nadie lo mira: cada vez que toques *Send mail as* por cualquier motivo, recorre
+  la lista entera y cuenta cuántas filas llevan el literal.
 - ⚠️ Gmail viene en **"Always reply from default address"**: cambiarlo a *responder desde la
   dirección a la que se envió* o cada respuesta a un cliente sale del Gmail personal.
 - El correo de confirmación **no lleva código, lleva un enlace** — y como no tiene query string,
@@ -419,6 +432,44 @@ Dos cosas que solo puede hacer el dueño del buzón, en este orden:
 La API key se la pasas por un canal aparte (no en el mismo email), y ojo: esa key puede enviar
 como cualquier dirección del dominio. Si eso no te gusta, no le des la key y quédate solo con el
 punto 1 — recibir en `info@` funciona sin que él toque nada más.
+
+## Fase 7 — la firma de la dirección nueva
+
+Sin firma, la respuesta a un cliente sale del Gmail personal disfrazada de dominio propio. Va
+después de la Fase 6 porque Gmail solo deja asignar firma a direcciones que ya estén en
+*Send mail as*.
+
+**Esto SÍ se automatiza entero** (13-ago-2026), al contrario que el arreglo del alias:
+
+- ✅ **`window.trustedTypes.createPolicy` NO está restringido** en la página de ajustes, aunque
+  el documento exija `TrustedHTML`. `const p = trustedTypes.createPolicy('lo-que-sea',
+  {createHTML: s => s})` y después `editor.innerHTML = p.createHTML(html)` mete una firma de
+  tabla anidada de golpe. Dispara un `InputEvent` detrás o Gmail no se entera del cambio.
+  Pruébalo con un `try/catch` de dos líneas antes de construir 15 nodos con `createElement`.
+- El editor es `div[role=textbox][contenteditable=true][aria-label="Signature"]`.
+- **`Create new` y `Save Changes` necesitan clic REAL** por coordenadas (`scrollIntoView` primero:
+  están a y≈3000 en el documento). El diálogo de nombre es propio de Gmail, no un `prompt()`
+  nativo: no bloquea la automatización.
+- **Los tres `<select>` de "Signature defaults"** (dirección, correos nuevos, respuestas) van con
+  el setter nativo de `HTMLSelectElement` + `change`. Cambiar el primero recarga los otros dos:
+  espera y vuelve a consultarlos.
+- ⚠️ **Asigna la firma a "on reply/forward" además de a "new emails".** Si solo pones la primera,
+  las respuestas a clientes —que son casi todo el tráfico de un `info@`— salen sin firma.
+- **Verifica recargando y volviendo a seleccionar la dirección** en el desplegable: tras el
+  refresco vuelve a la cuenta por defecto y parece que no se guardó nada.
+
+**La firma es HTML DE CORREO, no de web.** Gmail borra `<style>`, las clases y las `@font-face`:
+tablas anidadas, todo el estilo en línea, `<a>` con `color` y `text-decoration` propios (si no,
+los pinta azul subrayado), imágenes por URL absoluta https con `width`/`height` en atributos, y
+que el bloque siga leyéndose si el destinatario bloquea las imágenes. Límite ~10.000 caracteres.
+
+⚠️ **No pidas la firma a una herramienta de diseño de páginas web**: devuelve flexbox y `<style>`,
+y el editor de Gmail lo destroza al pegarlo. Úsala para el aspecto y traduce tú el HTML.
+
+Deja la firma también en un `firma.html` servido por la propia web (con `noindex` y un botón de
+copiar vía `navigator.clipboard.write` con blob `text/html`): reinstalarla en otro ordenador deja
+de depender de una sesión de trabajo. Y avisa de que **la app móvil de Gmail usa su propia firma
+de texto plano**, que se configura aparte en el teléfono.
 
 ## Rojo — nunca
 
