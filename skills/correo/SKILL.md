@@ -363,30 +363,30 @@ Ajustes → Cuentas → *Añadir otra dirección*. `smtp.resend.com`, puerto `58
   `\n` al final, Gmail lo manda dentro de la contraseña y Resend rechaza la autenticación. Se ve
   contando: una key de Resend son **36 caracteres**; si `pbpaste | wc -c` dice 37, sobra el salto
   (6-ago-2026, media hora perdida en un error que parecía de configuración).
-- **Desmarcar "Tratar como alias"**, o las respuestas vuelven al Gmail personal.
-- 🔴 **Viene MARCADA por defecto y es facilísimo guardar sin tocarla**: vive en el paso 1 del
-  asistente y la contraseña en el paso 2, así que al avanzar parece que ya está todo hecho. Pasó
-  dos veces seguidas el 9-ago-2026, la segunda avisando expresamente al humano. Y **arreglarlo
-  después cuesta más que hacerlo bien**: al editar, Gmail vuelve a pedir la API key para guardar.
-- **Cómo se comprueba (y la forma fiable de arreglarlo):** en la lista de *Send mail as*, cada
-  dirección correcta muestra el literal **"Not an alias."**; si falta, está mal. Entrando por
-  *edit info* se cae en el paso 3, donde el flag viaja como **`input[name=cfia]` oculto con valor
-  `"true"`**: ponerlo a `""` con el setter nativo lo apaga sin depender de que nadie acierte con
-  la casilla. Verificar SIEMPRE releyendo la lista, no el diálogo: al guardar se queda en blanco
-  y no confirma nada.
-- 🔴 **Pero ese arreglo por `cfia` NO lo puede aplicar el agente: la página de edición está
-  bloqueada** (13-ago-2026). Al pulsar *edit info*, Gmail navega a `…view=cf&cfa=<dirección>`, y
-  ahí el clasificador de permisos devuelve `[BLOCKED: Cookie/query string data]` a cualquier
-  `javascript_tool`, incluso de solo lectura; `screenshot` encima da *script injection timed out*
-  dos veces seguidas. O sea: la receta del `input[name=cfia]` sirve para que la aplique un humano,
-  no para automatizarla. **Traducción práctica: desmarcar la casilla en el alta no es "mejor", es
-  la ÚNICA vez que se puede hacer sin ojos humanos.** Si ya está mal, deja la pestaña abierta en
-  el asistente, copia la API key al portapapeles y que lo remate la persona.
-- ⚠️ **Audita también las direcciones que ya estaban, no solo la que acabas de dar de alta.** El
-  13-ago-2026, en una cuenta con seis direcciones, **dos** no tenían "Not an alias." — las dos
-  añadidas más recientemente, meses después de que el resto se configurara bien. El flag no
-  avisa de nada y nadie lo mira: cada vez que toques *Send mail as* por cualquier motivo, recorre
-  la lista entera y cuenta cuántas filas llevan el literal.
+- 🔴 **«Tratar como alias» va MARCADA en el montaje de esta skill. DÉJALA COMO VIENE.**
+  Corregido el 13-ago-2026 contra la documentación de Google, después de que esta misma línea
+  dijera lo contrario durante meses y mandara a desmarcarla «o las respuestas vuelven al Gmail
+  personal». **Eso es falso**, y el criterio real no es una preferencia sino de qué caso se trata:
+  - **Marcada** = *«Send and receive messages in my Gmail inbox»*: posees las dos direcciones y
+    los mensajes llegan a la MISMA bandeja. **Es exactamente el montaje de esta skill**: el
+    catch-all de Cloudflare reenvía `info@dominio` a tu Gmail, no hay buzón aparte.
+  - **Desmarcada** = *«Send on behalf of another user or account»*: administras dos direcciones
+    en **cuentas separadas**, en las que entras por separado.
+  - Y desmarcarla **empeora** el caso de esta skill: al responder, Gmail rellena el `To:` con la
+    propia dirección alternativa en vez de con los destinatarios del mensaje original.
+    → <https://knowledge.workspace.google.com/admin/users/should-i-uncheck-treat-as-an-alias-in-gmail>
+- ⚠️ **Corolario: el literal "Not an alias." de la lista NO es una marca de calidad, es solo el
+  estado.** La versión vieja lo trataba como comprobación («si falta, está mal») y así se
+  «arreglaron» dos direcciones el 9-ago-2026 que estaban bien, y el 13-ago se estuvo a punto de
+  romper otras dos. **No cuentes cuántas filas lo llevan.** Lo que sí hay que verificar es lo de
+  abajo: *responder desde la dirección a la que se envió*, que es lo que de verdad decide el
+  remitente de una respuesta.
+- ⚠️ **Si algún día hay que tocarla de verdad, no lo puede hacer el agente** (13-ago-2026). Al
+  pulsar *edit info*, Gmail navega a `…view=cf&cfa=<dirección>` y ahí el clasificador de permisos
+  devuelve `[BLOCKED: Cookie/query string data]` a cualquier `javascript_tool`, incluso de solo
+  lectura; `screenshot` encima da *script injection timed out* dos veces seguidas. Deja la pestaña
+  en el asistente, copia la API key al portapapeles y que lo remate la persona — y ojo, al editar
+  Gmail vuelve a pedir la API key para guardar.
 - ⚠️ Gmail viene en **"Always reply from default address"**: cambiarlo a *responder desde la
   dirección a la que se envió* o cada respuesta a un cliente sale del Gmail personal.
 - El correo de confirmación **no lleva código, lleva un enlace** — y como no tiene query string,
