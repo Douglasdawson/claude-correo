@@ -450,6 +450,13 @@ después de la Fase 6 porque Gmail solo deja asignar firma a direcciones que ya 
 - **`Create new` y `Save Changes` necesitan clic REAL** por coordenadas (`scrollIntoView` primero:
   están a y≈3000 en el documento). El diálogo de nombre es propio de Gmail, no un `prompt()`
   nativo: no bloquea la automatización.
+- ⚠️ **El campo de nombre del diálogo NO es "el primer `<input>` vacío que aparece".** El
+  16-ago-2026 el primer input vacío encontrado tenía el id de turno de la **barra de búsqueda de
+  Gmail** (vacía también, misma posición aparente x≈311,y≈22): el nombre de la firma se escribió
+  ahí, el diálogo real se quedó en blanco, y el clic en "Create" no hizo nada visible porque no
+  había nada que crear. Localiza el campo bueno por `placeholder="Signature name"` (id tipo
+  `c93`, cambia entre sesiones), nunca por "primero vacío" ni por el id que tenía la vez
+  anterior.
 - **Los tres `<select>` de "Signature defaults"** (dirección, correos nuevos, respuestas) van con
   el setter nativo de `HTMLSelectElement` + `change`. Cambiar el primero recarga los otros dos:
   espera y vuelve a consultarlos.
