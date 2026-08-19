@@ -63,6 +63,7 @@ need_cf() {
 cf_get()  { curl -s -m 25 -H "Authorization: Bearer $CF_TOKEN" "$CF_API$1"; }
 cf_post() { curl -s -m 25 -X POST -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json" --data "$2" "$CF_API$1"; }
 cf_put()  { curl -s -m 25 -X PUT  -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json" --data "$2" "$CF_API$1"; }
+cf_delete() { curl -s -m 25 -X DELETE -H "Authorization: Bearer $CF_TOKEN" "$CF_API$1"; }
 
 # rs_* reciben el token por variable RS_TOKEN (nunca por argv: quedaria en ps)
 rs_get()  { curl -s -m 25 -H "Authorization: Bearer $RS_TOKEN" "$RS_API$1"; }
@@ -658,12 +659,23 @@ cmd_entrante() {
   # o sea, sin recibir, y saliendo todo en verde. Los MX se pueden publicar por
   # la API de DNS, que si esta permitida — que es lo que se acabo haciendo a mano
   # tres veces el mismo dia antes de meterlo aqui.
-  local mx_apex spf_apex
-  mx_apex=$(cf_get "/zones/$z/dns_records?type=MX" | python3 -c '
+  local mx_apex_ids spf_apex
+  mx_apex_ids=$(cf_get "/zones/$z/dns_records?type=MX" | python3 -c '
 import json, sys
 d = sys.argv[1]
-print(len([x for x in (json.load(sys.stdin).get("result") or []) if x["name"] == d]))' "$d")
-  if [ "$mx_apex" = "0" ]; then
+print("\n".join(x["id"] for x in (json.load(sys.stdin).get("result") or []) if x["name"] == d))' "$d")
+  # --forzar ya implica "el MX de ahi esta muerto, lo he comprobado con `test`" (ver
+  # guarda de arriba): sin borrar el viejo, el nuestro nunca se publica (Cloudflare no
+  # deja dos MX con distinto proveedor en el mismo nombre por API) y el catch-all
+  # queda creado sin nada que lo alimente — verde por todos lados y cero correo real.
+  if [ -n "$mx_apex_ids" ] && [ "$forzar" = "--forzar" ]; then
+    info "--forzar: borro el/los MX foraneo(s) del apex antes de publicar el de Email Routing"
+    echo "$mx_apex_ids" | while read -r id; do
+      [ -n "$id" ] && cf_delete "/zones/$z/dns_records/$id" > /dev/null
+    done
+    mx_apex_ids=""
+  fi
+  if [ -z "$mx_apex_ids" ]; then
     local p
     for p in "36 route1" "52 route2" "92 route3"; do
       cf_post "/zones/$z/dns_records" \
