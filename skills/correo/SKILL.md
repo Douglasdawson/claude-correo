@@ -393,6 +393,45 @@ Ajustes → Cuentas → *Añadir otra dirección*. `smtp.resend.com`, puerto `58
   se puede abrir directamente en la pestaña controlada.
 - **Nunca escribir la API key en el formulario**: `pbcopy` y que la pegue el humano.
 
+### Gmail: el clic REAL no llega, y hay cosas que Google no deja automatizar
+
+Tres hallazgos de una sesión entera peleándose con los ajustes de Gmail. Ahorran repetirla:
+
+- 🔴 **En Gmail, la tool `computer` NO entrega el clic al documento — tampoco con la ventana
+  enfocada.** Se comprueba en dos líneas y conviene hacerlo antes de dudar de las coordenadas:
+  ```js
+  window.__hits=[]; addEventListener('click', e=>window.__hits.push({x:e.clientX,trusted:e.isTrusted}), true);
+  // …clic real… y luego:  window.__hits   →  []  = no ha llegado nada
+  ```
+  El primer clic solo **enfoca la ventana** (`document.hasFocus()` pasa de false a true) y ni ese
+  ni los siguientes generan evento. Corrige la idea de "para los overlays, clic real por
+  coordenadas": eso vale en Merchant Center, **no aquí**.
+- ✅ **Lo que SÍ funciona en Gmail es la secuencia sintética COMPLETA**, no un `.click()` suelto:
+  ```js
+  const fire=(el)=>{const r=el.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;
+    for(const t of ['pointerdown','mousedown','pointerup','mouseup','click']){
+      const E=t.startsWith('pointer')?PointerEvent:MouseEvent;
+      el.dispatchEvent(new E(t,{bubbles:true,cancelable:true,composed:true,view:window,clientX:x,clientY:y,button:0}));}};
+  ```
+  Con eso se opera la lista (seleccionar y mover mensajes fuera de Spam funciona: el contador del
+  título baja) y se abren los diálogos de ajustes. Un `.click()` a secas marca el checkbox pero
+  deja la selección sin registrar en el modelo interno de Gmail, y la acción de la barra no hace nada.
+- ⏳ **La página de ajustes tarda ~7 s en renderizar sus botones.** Antes de eso el DOM enseña el
+  esqueleto del formulario —los radios de la sección, el texto— pero **el botón no existe**, y es
+  facilísimo concluir "esta cuenta no tiene esa opción" cuando solo falta esperar. Si buscas un
+  botón por su texto y salen 0 resultados, **espera y repite antes de diagnosticar nada**.
+- 🚧 **Añadir una dirección de reenvío NO es automatizable**: al pulsar *Siguiente* con la
+  dirección puesta, Google responde *"No se ha podido realizar la verificación segura de Google"*.
+  Es antibot y no se esquiva. **Si el objetivo es que el correo de un dominio llegue a otro buzón,
+  no pases por aquí: cámbialo en el catch-all** (`correo.sh entrante <dominio> <destino-nuevo>`),
+  que es un PUT de API, es instantáneo y encima **quita** un salto de reenvío en vez de añadirlo.
+  El reenvío de Gmail solo hace falta para el correo que llega DIRECTO a ese buzón (plataformas,
+  organismos): eso sí se queda como tarea manual del dueño.
+- ⚠️ **Crear un filtro se queda a medias**: la primera pantalla sí responde (ojo, hay **tres**
+  elementos con el texto *Create filter* y el que vale es el `<button>`, no los `<span>`), pero el
+  botón que confirma en la pantalla de acciones tampoco acepta el sintético. Marcar
+  *"No enviarlo nunca a Spam"* acaba siendo manual.
+
 **Los popups de Google y Cloudflare se abren fuera del grupo de pestañas automatizado.** Antes de
 pulsar el botón que los abre:
 
