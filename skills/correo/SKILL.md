@@ -431,6 +431,32 @@ Tres hallazgos de una sesión entera peleándose con los ajustes de Gmail. Ahorr
   elementos con el texto *Create filter* y el que vale es el `<button>`, no los `<span>`), pero el
   botón que confirma en la pantalla de acciones tampoco acepta el sintético. Marcar
   *"No enviarlo nunca a Spam"* acaba siendo manual.
+- 🔴 **La regla que explica los dos fallos anteriores: el botón que CREA CONFIGURACIÓN PERSISTENTE
+  de la cuenta (un filtro, un reenvío) exige un evento confiable, y no hay forma legítima de
+  producirlo.** Lo demás —abrir diálogos, escribir en campos, seleccionar, mover mensajes fuera de
+  Spam— va con sintéticos sin problema. Comprobado subiendo la fidelidad del evento hasta el final
+  (`pointerover/mouseover/mousemove/pointerdown/mousedown/focus/pointerup/mouseup/click`, con
+  `detail:1`, `buttons:1`, `screenX/Y` y `pointerId`): **da igual**, porque lo que se comprueba es
+  `isTrusted`, que no se puede falsear — y falsearlo sería saltarse la protección, no resolverla.
+  **No inviertas más intentos en pulsarlo: monta el estado y deja que lo remate la persona.**
+- ✅ **Aun así, para un filtro hay una vía que llega mucho más lejos: `Import filters` con un XML,
+  sin tocar el disco.** El selector de archivo no hace falta —se le inyecta el fichero al
+  `input[type=file]` con `DataTransfer`—, y el botón *Open file* SÍ acepta el sintético:
+  ```js
+  const xml = `<?xml version='1.0' encoding='UTF-8'?>
+  <feed xmlns='http://www.w3.org/2005/Atom' xmlns:apps='http://schemas.google.com/apps/2006'>
+    <title>Mail Filters</title><entry><category term='filter'></category>
+      <title>Mail Filter</title><content></content>
+      <apps:property name='to' value='EL-DOMINIO'/>
+      <apps:property name='shouldNeverSpam' value='true'/>
+    </entry></feed>`;
+  const inp=document.querySelector('input[type=file][name=upload]');
+  const dt=new DataTransfer(); dt.items.add(new File([xml],'f.xml',{type:'text/xml'}));
+  inp.files=dt.files; inp.dispatchEvent(new Event('change',{bubbles:true}));
+  ```
+  Gmail parsea el XML y muestra el filtro listo (*"Matches: to:(...) / Do this: Never send it to
+  Spam"*). Solo el *Create filters* final se resiste. **Úsala igualmente**: deja el trabajo en un
+  clic en vez de en un formulario entero, y el XML documenta exactamente qué filtro se quería.
 
 **Los popups de Google y Cloudflare se abren fuera del grupo de pestañas automatizado.** Antes de
 pulsar el botón que los abre:
