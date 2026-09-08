@@ -543,6 +543,47 @@ copiar vía `navigator.clipboard.write` con blob `text/html`): reinstalarla en o
 de depender de una sesión de trabajo. Y avisa de que **la app móvil de Gmail usa su propia firma
 de texto plano**, que se configura aparte en el teléfono.
 
+## Todo en `pass` y aun así cae en spam
+
+`estado` en verde y SPF/DKIM/DMARC en `pass` **no cierran el caso**: la entrega la decide el
+receptor, y el que más castiga es **Microsoft** (hotmail / outlook / live / msn). 8-sep-2026:
+un cliente en Hotmail decía que TODAS las facturas le caían en spam mientras otro en Gmail
+respondía *"factura recibida, gracias"* al mismo correo del mismo día.
+
+**Mide antes de tocar nada.** Dos comprobaciones zanjan la discusión y ninguna necesita
+esperar al siguiente envío:
+
+- **Las cabeceras de un correo YA enviado.** Si la app manda BCC a un buzón propio, la prueba
+  está ahí: con el MCP de Gmail, `get_message` con `messageFormat: RAW` trae el
+  `Authentication-Results` entero. Busca las tres juntas: `spf=pass`, `dkim=pass
+  header.d=<TU dominio>` (el tuyo, no solo el de amazonses) y `dmarc=pass`.
+- **mail-tester, para puntuar el CONTENIDO** — lo único que las cabeceras no dicen.
+  ⚠️ La dirección `test-xxxx@srv1.mail-tester.com` de su portada **se genera por JS**: un
+  `curl` a `mail-tester.com` devuelve el HTML sin ella y se va el rato buscándola. **El id lo
+  eliges tú**: manda a `test-<loquesea>@srv1.mail-tester.com` y lee
+  `https://www.mail-tester.com/test-<loquesea>` (esa sí sale entera por `curl`). Y manda **la
+  plantilla real** — 15 líneas que importen el componente, `render()` y lo envíen por Resend —,
+  no un "hola qué tal": lo que se juzga es el HTML que recibe el cliente.
+
+**Si sale 10/10, deja de tocar la configuración: ahí no hay nada que arreglar.** Lo que queda
+es reputación, y estas son las palancas por eficacia real:
+
+| Palanca | ¿Sirve? |
+|---|---|
+| Que el destinatario marque *No es spam* y añada el remitente a contactos | ✅ **lo único inmediato**, y en Outlook queda para ese buzón |
+| No mandar dos correos casi idénticos al mismo destinatario a la vez | ✅ es el patrón que dispara el filtro — se arregla en el código que los manda, no en el DNS |
+| Volumen bajo pero constante (Microsoft premia el goteo estable) | ✅ a semanas vista |
+| SNDS / JMRP de Microsoft, o pedirles mitigación de IP | ❌ exige ser dueño de las IPs; con Resend son del pool compartido de SES |
+| IP dedicada | ❌ con poco volumen es PEOR: no llega a calentarse nunca |
+| BIMI | ❌ pide un VMC de ~1.000 €/año |
+
+Y **mira a cuántos afecta antes de rediseñar nada**: un `select` por dominio de email sobre la
+tabla de clientes dice en un segundo si es el sistema o es un buzón. Aquí era **uno de seis**.
+
+⚠️ `correo.sh dmarc` escribe en el DNS y **el clasificador de permisos lo bloquea** aunque el
+cambio sea inocuo (el `rua` no afecta a la entrega). No busques otra vía: pásale el comando
+literal al humano y sigue con el resto.
+
 ## Rojo — nunca
 
 - **Montar Email Routing en un dominio con correo ajeno** sin confirmarlo con su dueño.
