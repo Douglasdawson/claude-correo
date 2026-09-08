@@ -580,9 +580,15 @@ es reputación, y estas son las palancas por eficacia real:
 Y **mira a cuántos afecta antes de rediseñar nada**: un `select` por dominio de email sobre la
 tabla de clientes dice en un segundo si es el sistema o es un buzón. Aquí era **uno de seis**.
 
-⚠️ `correo.sh dmarc` escribe en el DNS y **el clasificador de permisos lo bloquea** aunque el
-cambio sea inocuo (el `rua` no afecta a la entrega). No busques otra vía: pásale el comando
-literal al humano y sigue con el resto.
+⚠️ `correo.sh dmarc` escribe en el DNS y **el clasificador de permisos lo bloquea cuando sale
+del agente**, aunque el cambio sea inocuo (el `rua` no afecta a la entrega). No busques otra
+vía: pásale el comando literal al humano y sigue con el resto — **si él lo pega en el chat, la
+misma orden pasa sin problema**, así que el bloqueo cuesta un turno, no la tarea.
+
+⚠️ Y al verificar el cambio, **el autoritativo puede ir por DETRÁS del resolver público**:
+recién hecho el `PUT`, `dig @<ns>.ns.cloudflare.com` devolvía el TXT viejo mientras `@1.1.1.1`
+ya servía el nuevo (lag interno de Cloudflare, segundos). Es justo al revés de lo que uno
+espera y parece que el cambio no se ha guardado: repite en los dos NS antes de tocar nada.
 
 ## Rojo — nunca
 
