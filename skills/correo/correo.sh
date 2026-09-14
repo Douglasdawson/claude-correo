@@ -511,6 +511,74 @@ import json,sys; print(json.dumps({"type":"A","name":sys.argv[1],"content":sys.a
   done
 }
 
+# ---------------------------------------------------------------------------
+# importar — copia la zona del REGISTRADOR a Cloudflare, sin fiarse del escaneo
+# ---------------------------------------------------------------------------
+# El escaneo de importacion de Cloudflare puede traer CERO registros y dejar la
+# zona vacia sin avisar (6-ago-2026, dos veces;
+# 14-sep-2026 otra vez: 'zona' dijo "creada", paridad marco 3 nombres en rojo
+# y la zona no tenia NI UN registro, ni el A del apex). Con el PAT de GoDaddy la
+# zona se LEE y se COPIA, que es la diferencia entre migrar y adivinar.
+# Se saltan SOA, los NS del apex y _domainconnect (solo sirve dentro de GoDaddy).
+# Todo se crea en GRIS (proxied:false): en naranja se rompe el ACME de la web.
+cmd_importar() {
+  local d="${1:-}"; [ -n "$d" ] || { echo "uso: correo.sh importar <dominio>" >&2; return 1; }
+  need_cf
+  local z; z=$(zid "$d") || { mal "la zona no existe en Cloudflare: 'correo.sh zona $d' primero"; return 1; }
+  local pat; pat=$(gd_pat)
+  [ -n "$pat" ] || { mal "falta ~/.config/godaddy-pat.token (hoy solo se lee GoDaddy)"; return 1; }
+
+  titulo "$d — copiando la zona del registrador"
+  local zona; zona=$(curl -s -m 40 -H "Authorization: Bearer $pat" -H "Accept: application/json" \
+    "https://api.godaddy.com/v3/domains/zones/$d/dns-records")
+  if ! printf '%s' "$zona" | grep -q '"items"'; then
+    mal "GoDaddy no devolvio la zona (PAT de v3? el dominio esta en esa cuenta?)"; return 1
+  fi
+
+  # los que ya estan en Cloudflare, para no duplicar al repetir el comando
+  local ya; ya=$(cf_get "/zones/$z/dns_records?per_page=200")
+
+  local plan; plan=$(printf '%s' "$zona" | python3 -c '
+import json, sys
+d = sys.argv[1]
+ya = json.loads(sys.argv[2]).get("result") or []
+tengo = {(r["type"], r["name"], str(r["content"]).rstrip(".")) for r in ya}
+SALTAR = ("SOA",)
+for r in json.load(sys.stdin).get("items") or []:
+    t, n, data = r.get("type"), r.get("name"), (r.get("data") or "")
+    if t in SALTAR:                       continue
+    if t == "NS" and n == "@":            continue   # los pone Cloudflare
+    if n == "_domainconnect":             continue   # solo sirve dentro de GoDaddy
+    fqdn = d if n == "@" else "%s.%s" % (n, d)
+    if (t, fqdn, data.rstrip(".")) in tengo:
+        print("YA\t%s\t%s\t%s" % (t, fqdn, data)); continue
+    if t not in ("A", "AAAA", "CNAME", "TXT", "MX", "SRV", "CAA"):
+        print("NO\t%s\t%s\t%s" % (t, fqdn, data)); continue
+    rec = {"type": t, "name": fqdn, "content": data.rstrip("."), "ttl": 1}
+    if t in ("A", "AAAA", "CNAME"): rec["proxied"] = False
+    if t == "MX":  rec["priority"] = r.get("priority", 10)
+    print("CREAR\t%s\t%s\t%s" % (t, fqdn, json.dumps(rec)))
+' "$d" "$ya")
+
+  local accion tipo nombre resto r n_creados=0 n_saltados=0
+  while IFS=$'\t' read -r accion tipo nombre resto; do
+    [ -n "${accion:-}" ] || continue
+    case "$accion" in
+      YA)    info "ya estaba: $tipo $nombre" ;;
+      NO)    mal "NO copiado (tipo $tipo sin soporte aqui): $nombre → $resto"; n_saltados=$((n_saltados+1)) ;;
+      CREAR)
+        r=$(cf_post "/zones/$z/dns_records" "$resto")
+        if cf_ok "$r"; then ok "$tipo $nombre"; n_creados=$((n_creados+1))
+        else mal "no se pudo crear $tipo $nombre: $(printf '%s' "$r" | head -c 200)"; fi ;;
+    esac
+  done <<<"$plan"
+
+  echo
+  info "$n_creados creados. AHORA: 'correo.sh paridad $d' — tiene que salir verde ANTES de tocar los NS"
+  [ "$n_saltados" -gt 0 ] && mal "$n_saltados registro(s) sin copiar: revisalos A MANO antes de migrar"
+  return 0
+}
+
 cmd_ns() {
   local d="${1:-}" accion="${2:-}" forzar="${3:-}"
   [ -n "$d" ] || { echo "uso: correo.sh ns <dominio> [--a-cloudflare] [--forzar]" >&2; return 1; }
@@ -1160,6 +1228,7 @@ case "${1:-}" in
   zona)         shift; cmd_zona "$@" ;;
   paridad)      shift; cmd_paridad "$@" ;;
   apuntar)      shift; cmd_apuntar "$@" ;;
+  importar)     shift; cmd_importar "$@" ;;
   entrante)     shift; cmd_entrante "$@" ;;
   destinos)     shift; cmd_destinos "$@" ;;
   permisos)     shift; cmd_permisos "$@" ;;
@@ -1168,5 +1237,5 @@ case "${1:-}" in
   test)         shift; cmd_test "$@" ;;
   probar-envio) shift; cmd_probar_envio "$@" ;;
   estado)       shift; cmd_estado "$@" ;;
-  *) echo "uso: correo.sh [estado|flota|entregas|permisos|inventario|precheck|zona|paridad|apuntar|entrante|destinos|saliente|dmarc|test|probar-envio] <dominio> …" >&2; exit 1 ;;
+  *) echo "uso: correo.sh [estado|flota|entregas|permisos|inventario|precheck|zona|paridad|importar|apuntar|entrante|destinos|saliente|dmarc|test|probar-envio] <dominio> …" >&2; exit 1 ;;
 esac

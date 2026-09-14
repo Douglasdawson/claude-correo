@@ -29,6 +29,7 @@ bash $C precheck <dominio>                   # ANTES de tocar nada: DNSSEC, NS, 
 bash $C inventario <dominio>                 # todos los registros, con el tipo explícito
 bash $C zona <dominio>                       # crea la zona en Cloudflare (NO cambia los NS)
 bash $C paridad <dominio>                    # ¿sirve lo mismo que el registrador? antes de migrar
+bash $C importar <dominio>                   # copia la zona del registrador (el escaneo de CF miente)
 bash $C apuntar <dominio> <ip>               # apex + www a esa IP, en gris (rellena una zona vacía)
 bash $C ns <dominio> [--a-cloudflare]        # los NS en el registrador; los cambia si paridad va verde
 bash $C entrante <dominio> <destino>         # Email Routing + catch-all
@@ -184,10 +185,20 @@ campo de nameservers, y `paridad` te dice si ya se puede tocar.
 - ⚠️ **DNSSEC activo + cambio de NS = dominio sin resolver del todo.** `precheck` lo comprueba y
   `zona` se niega a actuar. Hay que desactivarlo en el registrador y esperar a que caduque el DS.
 - 🔴 **El escaneo de importación de Cloudflare puede traer CERO registros, y la zona queda vacía
-  sin avisar de nada.** Pasó dos veces el 6-ago-2026. Si el registrador tiene API para leer la
-  zona, **lee la zona y cópiala** en vez de fiarte del escaneo: es la diferencia entre migrar y
-  adivinar. GoDaddy: `GET /v3/domains/zones/{dominio}/dns-records` con el mismo PAT. Al copiar,
-  saltar `SOA`, los `NS` del apex y `_domainconnect` (solo sirve dentro de GoDaddy).
+  sin avisar de nada.** Pasó dos veces el 6-ago-2026 y otra el 14-sep-2026 (`zona` dijo "creada", y la zona no tenía **ni un registro**, ni el A del apex). Si el registrador
+  tiene API para leer la zona, **lee la zona y cópiala** en vez de fiarte del escaneo: es la
+  diferencia entre migrar y adivinar. Eso es justo lo que hace **`correo.sh importar <dominio>`**
+  (GoDaddy → Cloudflare, en gris, saltando `SOA`, los `NS` del apex y `_domainconnect`, que solo
+  sirve dentro de GoDaddy). Correr SIEMPRE después de `zona`, aunque la importación diga que fue
+  bien: es idempotente (lo que ya esté lo marca "ya estaba") y cuesta 3 segundos.
+- ⚠️ **Tras `importar`, espera unos segundos antes de `paridad`: los NS de Cloudflare tardan en
+  servir lo que la API ya acepta.** El 14-sep-2026 la paridad corrida inmediatamente después dio
+  `www` en rojo ("VACIO — este se pierde al cambiar los NS") con el CNAME perfectamente creado y
+  visible en `GET /dns_records`; repetida un minuto más tarde, verde los cuatro nombres. Es el
+  mismo lag interno que la nota del `dmarc` al final de la skill, aquí en la dirección que asusta:
+  parece que la copia no ha entrado y la tentación es volver a crear registros duplicados.
+  **Repite la paridad antes de tocar nada** — y no fuerces el cambio de NS por un rojo de un
+  registro que acabas de crear.
 - 🔴 **Los servicios del registrador mueren al mover los NS, y `paridad` NO puede detectarlo.**
   El caso real: un `www` con A a `15.197.x` / `3.33.x` — el redirector de GoDaddy. Copiarlo tal
   cual deja la paridad **en verde** y la web del cliente rota al día siguiente, porque ese
@@ -579,6 +590,14 @@ es reputación, y estas son las palancas por eficacia real:
 
 Y **mira a cuántos afecta antes de rediseñar nada**: un `select` por dominio de email sobre la
 tabla de clientes dice en un segundo si es el sistema o es un buzón. Aquí era **uno de seis**.
+
+⚠️ **`correo.sh ns <dominio> --a-cloudflare` también lo bloquea el clasificador** (14-sep-2026):
+es la acción que puede tirar la web y todo lo que cuelgue del dominio, así
+que es razonable que pare. No busques otra vía para cambiar la delegación — deja la zona creada, la
+copia hecha y la **paridad en verde**, y pásale al humano el comando literal (o el camino del panel:
+`dcc.godaddy.com` → dominio → Nameservers → Change). Con la paridad verde el cambio es seguro y
+cuesta 30 segundos; el trabajo de preparación no se pierde. Y el entrante (Fase 3) **va después de
+la delegación**: montar el MX antes deja la paridad en rojo y el propio `ns` se niega a seguir.
 
 ⚠️ `correo.sh dmarc` escribe en el DNS y **el clasificador de permisos lo bloquea cuando sale
 del agente**, aunque el cambio sea inocuo (el `rua` no afecta a la entrega). No busques otra
