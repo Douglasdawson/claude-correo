@@ -116,6 +116,15 @@ Se guarda en `~/.config/cloudflare-api.token`.
   error` que parece de sesión y es de permisos).
 - **Editar un token no cambia su valor**: añadir permisos a uno que ya existe no obliga a tocar
   `~/.config` ni a redesplegar nada.
+- ⚠️ **El `10000: Authentication error` que suelta `entrante` al "activar Email Routing" NO es un
+  permiso que falte: el endpoint de SETTINGS del servicio (`GET /zones/<id>/email/routing`,
+  `POST .../enable`) lo rechaza con este token en TODAS las zonas, incluidas las que llevan meses
+  recibiendo correo** (comprobado el 15-sep-2026 en tres zonas, dos de ellas con el correo
+  funcionando). No lo persigas y no mandes al humano a añadir un quinto permiso: las reglas y el
+  catch-all se crean con `Email Routing Rules`, el servicio se habilita solo en cuanto se publican
+  los MX, y `entrante` ya trata ese error como no-fatal ("publico yo los registros"). La prueba de
+  que da igual es el `test` en 250 y el correo en la bandeja, no el estado del servicio — que con
+  este token no se puede leer.
 - **`Account Settings → Read` no hace falta**: `GET /accounts` viene vacío sin él, así que el
   script saca el account id de una zona cualquiera. Un permiso menos que pedir.
 - ⚠️ **Arreglar un token es manual, no lo intentes por ti mismo.** Por API no se puede
@@ -268,6 +277,16 @@ Activa Email Routing, crea MX + SPF + DKIM, da de alta el destino y pone el **ca
   con envíos repetidos: uno solo no distingue "funciona" de "esta vez tuvo suerte".
 - ⚠️ **`test` da 250 aunque el destino esté sin verificar**: el MX de Cloudflare acepta el sobre
   antes de mirar la ruta. `test` verde ≠ correo entregado. La prueba buena es `destinos`.
+- 🔴 **Recién cambiados los NS, `test` canta `550 5.1.1 Domain does not exist` y NO es un fallo de
+  montaje: es propagación interna de Cloudflare** (15-sep-2026). MX y SPF publicados, catch-all
+  `enabled:true`, destino verificado… y las dos direcciones en rojo con ese 550. El mensaje habla
+  del dominio, así que se lee como "el montaje está mal" y la tentación es rehacer las reglas o
+  ponerse a pelear con permisos. Unos minutos después, `250 2.1.0 Ok` en las dos, idéntico al de un
+  dominio que llevaba meses funcionando. **Compara contra un dominio tuyo que ya reciba**: si ese
+  da 250 y el nuevo 550, es tiempo; si los dos dan 550, es Cloudflare. Y la zona puede seguir en
+  `status: pending` mientras el correo ya funciona — el `pending` no bloquea nada, solo significa
+  que Cloudflare aún no ha cerrado su comprobación de NS (`PUT /zones/<id>/activation_check` la
+  fuerza).
 - ⚠️ **Se niega si el dominio ya tiene MX de otro proveedor.** Montar Email Routing encima deja a
   su dueño sin correo, y no se nota hasta que alguien se queja. Existe `--forzar`; piénsalo dos
   veces, sobre todo en un dominio de cliente.
@@ -599,10 +618,12 @@ copia hecha y la **paridad en verde**, y pásale al humano el comando literal (o
 cuesta 30 segundos; el trabajo de preparación no se pierde. Y el entrante (Fase 3) **va después de
 la delegación**: montar el MX antes deja la paridad en rojo y el propio `ns` se niega a seguir.
 
-⚠️ `correo.sh dmarc` escribe en el DNS y **el clasificador de permisos lo bloquea cuando sale
-del agente**, aunque el cambio sea inocuo (el `rua` no afecta a la entrega). No busques otra
-vía: pásale el comando literal al humano y sigue con el resto — **si él lo pega en el chat, la
-misma orden pasa sin problema**, así que el bloqueo cuesta un turno, no la tarea.
+⚠️ `correo.sh dmarc` escribe en el DNS y **el clasificador de permisos lo bloquea a veces cuando
+sale del agente**, aunque el cambio sea inocuo (el `rua` no afecta a la entrega). El bloqueo **no
+es determinista**: el 15-sep-2026 el mismo comando pasó sin más sobre un dominio recién migrado,
+así que **inténtalo antes de delegarlo**. Si te lo bloquea, no busques otra vía: pásale el comando
+literal al humano y sigue con el resto — **si él lo pega en el chat, la misma orden pasa sin
+problema**, así que el bloqueo cuesta un turno, no la tarea.
 
 ⚠️ Y al verificar el cambio, **el autoritativo puede ir por DETRÁS del resolver público**:
 recién hecho el `PUT`, `dig @<ns>.ns.cloudflare.com` devolvía el TXT viejo mientras `@1.1.1.1`
