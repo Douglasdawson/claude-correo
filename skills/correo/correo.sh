@@ -393,8 +393,20 @@ cmd_paridad() {
   need_cf
   local d="${1:-}"; [ -n "$d" ] || { echo "uso: correo.sh paridad <dominio>" >&2; return 1; }
   local z; z=$(zid "$d") || return 1
-  local viejo; viejo=$(ns_reales "$d" | grep -v cloudflare | head -1)
+  local todos viejo; todos=$(ns_reales "$d"); viejo=$(printf '%s\n' "$todos" | grep -v cloudflare | grep -v '^$' | head -1)
 
+  # ⚠ Vacio NO es "ya en Cloudflare". Con una VPN o una red que intercepta el
+  # puerto 53, root/gTLD/autoritativos contestan REFUSED con flag 'ra' (responde
+  # un resolver que se hace pasar por ellos), ns_reales sale vacio y esto daba
+  # VERDE sin comparar nada — y 'ns --a-cloudflare' cambiaba la delegacion sin
+  # freno (1-oct-2026, red con DNS de VPN). Se distingue
+  # con: dig +norecurse NS com. @a.root-servers.net → status REFUSED.
+  if [ -z "$todos" ]; then
+    mal "no puedo leer la delegacion en el registro del TLD (¿VPN o red que intercepta el DNS?)"
+    info "prueba: dig +norecurse NS com. @a.root-servers.net — si da REFUSED, esta red no sirve:"
+    info "corre paridad desde otra red o desde el VPS. NO cambies los nameservers a ciegas"
+    return 1
+  fi
   if [ -z "$viejo" ]; then
     info "la delegacion ya esta en Cloudflare: no hay con quien comparar"; return 0
   fi
