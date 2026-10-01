@@ -562,6 +562,13 @@ for r in json.load(sys.stdin).get("items") or []:
     if t == "NS" and n == "@":            continue   # los pone Cloudflare
     if n == "_domainconnect":             continue   # solo sirve dentro de GoDaddy
     fqdn = d if n == "@" else "%s.%s" % (n, d)
+    # Web del Website Builder de GoDaddy: el A no lleva IP sino el literal
+    # "WebsiteBuilder Site". Fuera de sus NS se sirve con estos dos A.
+    if t == "A" and data == "WebsiteBuilder Site":
+        for ip in ("76.223.105.230", "13.248.243.5"):
+            if ("A", fqdn, ip) in tengo: print("YA\tA\t%s\t%s" % (fqdn, ip)); continue
+            print("CREAR\tA\t%s\t%s" % (fqdn, json.dumps({"type": "A", "name": fqdn, "content": ip, "ttl": 1, "proxied": False})))
+        continue
     if (t, fqdn, data.rstrip(".")) in tengo:
         print("YA\t%s\t%s\t%s" % (t, fqdn, data)); continue
     if t not in ("A", "AAAA", "CNAME", "TXT", "MX", "SRV", "CAA"):
